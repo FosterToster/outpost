@@ -1,14 +1,14 @@
 from typing import Iterable, Union
 from enum import Enum
-from .exceptions import RequiredException
+from .exceptions import FieldRequirementException
 from abc import ABC, abstractmethod
 
 
 # class Enum(Enum):
 #     ...
 
-
-class RequirementBase(ABC):
+# basic rule
+class Rule(ABC):
     @abstractmethod
     def resolve(self, passed_fields: Iterable[str]):
         ...
@@ -17,11 +17,18 @@ class RequirementBase(ABC):
     def text_rule(self):
         ...
 
+class NoRequirements(Rule):
+    def resolve(self, _):
+        ...
 
-class Require(RequirementBase):
+    def text_rule(self):
+        return ''
+
+
+class Require(Rule):
     def __init__(self, field:Enum) -> None:
         if not isinstance(field, Enum):
-            raise RequiredException(f'Rule "{field}" is not model field')
+            raise FieldRequirementException(f'Rule "{field}" is not model field')
 
         self._field = field
 
@@ -31,27 +38,31 @@ class Require(RequirementBase):
 
     def resolve(self, passed_fields: Iterable[str]):
         if not (self.field.value in passed_fields):
-            raise RequiredException(f"Field {self.text_rule()} required")
+            raise FieldRequirementException(f"Field {self.text_rule()} required")
 
     def text_rule(self):
-        return self.field.value
+        return str(self.field)
 
 
-class _RequireMany(RequirementBase):
+class _RequireMany(Rule):
     
-    def __init__(self, *rules:Union[Enum, RequirementBase]) -> None:
+    def __init__(self, *rules:Union[Enum, Rule]) -> None:
         self._rules = list()
+        self.append_rules(*rules)
+        
+
+    def append_rules(self, *rules:Union[Enum, Rule]):
         for rule in rules:
             if isinstance(rule, Enum):
                 self._rules.append(Require(rule))
-            elif isinstance(rule, RequirementBase):
+            elif isinstance(rule, Rule):
                 self._rules.append(rule)
             else:
-                raise RequiredException(f'Rule {rule} is not Requirement')
+                raise FieldRequirementException(f'Rule {rule} is not Requirement')
         
 
     @property
-    def rules(self) -> Iterable[RequirementBase]:
+    def rules(self) -> Iterable[Rule]:
         return self._rules
 
 
@@ -60,12 +71,12 @@ class OR(_RequireMany):
         for rule in self.rules:
             try:
                 rule.resolve(passed_fields)
-            except RequiredException as e:
+            except FieldRequirementException as e:
                 continue
             else:
                 return None
         else:
-            raise RequiredException(f'Required fields: {self.text_rule()}')
+            raise FieldRequirementException(f'Fields requirement rule: {self.text_rule()}')
 
     def text_rule(self):
         return '(' + ' OR '.join(rule.text_rule() for rule in self.rules) + ')'
@@ -75,25 +86,23 @@ class AND(_RequireMany):
         for rule in self.rules:
             try:
                 rule.resolve(passed_fields)
-            except RequiredException as e:
-                raise RequiredException(f'Required fields: {self.text_rule()}')
+            except FieldRequirementException as e:
+                raise FieldRequirementException(f'Fields requirement rule: {self.text_rule()}')
             else:
                 continue
-        else:
-            raise RequiredException(f'Required fields: {self.text_rule()}')
 
     def text_rule(self):
         return '(' + ' AND '.join(rule.text_rule() for rule in self.rules) + ')'
 
 
-class NOT(RequirementBase):
-    def __init__(self, rule: Union[Enum, RequirementBase]) -> None:
+class NOT(Rule):
+    def __init__(self, rule: Union[Enum, Rule]) -> None:
         if isinstance(rule, Enum):
             self._rule = Require(rule)
-        elif isinstance(rule, RequirementBase):
+        elif isinstance(rule, Rule):
             self._rule = rule
         else:
-            raise RequiredException(f'Rule {rule} is not Requirement')
+            raise FieldRequirementException(f'Rule {rule} is not Requirement')
 
     @property
     def rule(self):
@@ -102,10 +111,10 @@ class NOT(RequirementBase):
     def resolve(self, passed_fields: Iterable[str]):
         try:
             self.rule.resolve(passed_fields)
-        except RequiredException:
+        except FieldRequirementException:
             pass
         else:
-            raise RequiredException(f"Fields required: {self.text_rule()}")
+            raise FieldRequirementException(f"Fields requirement rule: {self.text_rule()}")
 
     def text_rule(self):
         return f'NOT {self.rule.text_rule()}'
