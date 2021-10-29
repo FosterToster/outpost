@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import Optional, TypeVar, Iterable
-from dataclasses import is_dataclass, dataclass, fields
+from typing import Iterable
+from dataclasses import is_dataclass,fields
 from enum import Enum
+
+from .rules import AND, Rule, Require, NoRequirements
 
 from .classproperty import classproperty
 
@@ -23,38 +25,99 @@ class ABCTypeValidator(ABC):
 
 
 class DataclassTypeValidator(ABCTypeValidator):
+   
     def get_fieldlist(self):
         return tuple(field.name for field in fields(self.model))    
 
-class MemberDict(dict):
-    _member_names = ()
 
 class OutpostMeta(type):
 
     @staticmethod
     def generate_model_proxy(model:type, fields:Iterable):
+
+        #idk why Enum metaclass dont likes common dicts. _member_names field is needed for it, and there is nothing i can do
+        class MemberDict(dict):
+            _member_names = ()
+
         members = MemberDict()
-        # members.update({'__module__': __name__, '__qualname__': f"{model.__name__}FieldsProxy"})
+ 
         members.update(dict((field_, field_) for field_ in fields))
         members._member_names = [key for key in members.keys()]
-        return type(f"{model.__name__}FieldsProxy", (Enum,), members)
+        # return type(f"{model.__name__}FieldsProxy", (Enum,), members)
+        return type(f"{model.__name__}", (Enum,), members)
+
+    @staticmethod
+    def acquire_model_from_superclasses(superclasses_, model:type = None):
+        parent_model = None
+        
+        for superclass in superclasses_:
+            if hasattr(superclass, '__model__'):
+                if getattr(superclass, '__model__') is not None:
+                    # store parent model
+                    if parent_model is None:
+                        parent_model = getattr(superclass, '__model__')
+                    
+                    # check that model is in hierarchy
+                    if model is None:
+                        model = getattr(superclass, '__model__')
+                    elif not issubclass(model, getattr(superclass, '__model__')):
+                        raise AbstractError(f'Model {model.__name__} is not in {parent_model.__name__} hierarchy.')
+                    else:
+                        model = getattr(superclass, '__model__')
+        
+        return model
+
+    @staticmethod
+    def inherit_requirements(superclasses_, own_rule: Rule):
+        rules = [
+            superclass.__requirement_rule__ for superclass in superclasses_ \
+                if hasattr(superclass, '__requirement_rule__') and getattr(superclass, '__requirement_rule__') is not None
+            ]
+        
+        if own_rule is not None:
+            if isinstance(own_rule, Enum):
+                rules.append(Require(own_rule))
+            else:
+                rules.append(own_rule)
+        
+        result = AND()
+
+        for rule in rules:
+            if isinstance(rule, AND):
+                result.append_rules(*rule.rules)
+            else:
+                result.append_rules(rule)
+
+        if len(result.rules) == 0:
+            return None
+        if len(result.rules) == 1:
+            return result.rules[0]
+        else:
+            return result    
+
+    @staticmethod
+    def inherit_readonly(superclasses_, own_readonly):
+        result = dict()
+        for superclass in superclasses_:
+            result.update(superclass.readonly_fields)
+
+        result.update(own_readonly)
+        
+        return result
+            
 
     def __new__(class_, name_:str, superclasses_:list, dict_:dict, *, model:type = None):
-        new_dict = dict()
-        new_dict.update(dict_)
         # just create abc classes
         if name_ in ('ABCOutpost', 'Outpost'):
-            return super().__new__(class_, name_, superclasses_, new_dict)
+            return super().__new__(class_, name_, superclasses_, dict_)
+
+        new_dict = dict()
+        new_dict.update(dict_)
         
-        # searching for validation model in superclasses
+        # semantic model inheritance
+        model = class_.acquire_model_from_superclasses(superclasses_, model)
         if model is None:
-            for superclass in superclasses_:
-                if hasattr(superclass, '__model__'):
-                    if getattr(superclass, '__model__') is not None:
-                        model = getattr(superclass, '__model__')
-                        break
-            else:
-                raise AbstractError(f'Validator class "{name_}" does not have model to validate.')
+            raise AbstractError(f'Validator class "{name_}" does not have model to validate.')
 
         
         # selecting basic type validator
@@ -65,60 +128,91 @@ class OutpostMeta(type):
         
         new_dict['__model__'] = model
 
-        new_dict['__model_proxy__'] = class_.generate_model_proxy(new_dict['__model__'], new_dict['__type_validator__'].get_fieldlist())
-
+        new_dict['__model_fields__'] = class_.generate_model_proxy(
+            new_dict['__model__'], 
+            new_dict['__type_validator__'].get_fieldlist()
+        )
         
-        result = super().__new__(class_, name_, superclasses_, new_dict)
+        result_class = super().__new__(class_, name_, superclasses_, new_dict)
+        
         # associating validator with model
-        if hasattr(model, '__outpost_validators__'):
-            model.__outpost_validators__.append(result)
-        else:
-            model.__outpost_validators__ = list((result,))
+        # if hasattr(model, '__outpost_validators__'):
+        #     model.__outpost_validators__.append(result_class)
+        # else:
+        #     model.__outpost_validators__ = list((result_class,))
 
-        return result
+        result_class.__requirement_rule__ = class_.inherit_requirements(
+            superclasses_, 
+            getattr(result_class, 'requirements')(result_class)
+        )
+
+        try:
+            delattr(result_class, 'requirements')
+        except AttributeError:
+            ...
+
+        result_class.__readonly_fields__ = class_.inherit_readonly(
+            superclasses_, 
+            getattr(result_class, 'readonly')(result_class)
+        )
+
+        try:
+            delattr(result_class, 'readonly')
+        except AttributeError:
+            ...
+
+
+        return result_class
 
 
 class ABCOutpost(metaclass=OutpostMeta):
     __model__ = None
     __type_validator__ = None
-    __model_proxy__ = None
+    __model_fields__ = None
+    __requirement_rule__ = None
+    __readonly_fields__ = None
 
     @classproperty
     def model(class_):
         return class_.__model__
 
     @classproperty
-    def validator(class_):
+    def validator(class_) -> ABCTypeValidator:
         return class_.__type_validator__
 
     @classproperty
-    def model_fields(class_):
-        a = class_.__model_proxy__
-        return a
+    def fields(class_) -> Enum:
+        return class_.__model_fields__
+
+    @classproperty
+    def requirement_rule(class_) -> Rule:
+        if class_.__requirement_rule__ is None:
+            return NoRequirements()
+        else:
+            return class_.__requirement_rule__
+
+    @classproperty
+    def readonly_fields(class_) -> dict:
+        if class_.__readonly_fields__ is None:
+            return dict()
+        else:
+            return class_.__readonly_fields__
     
-    def nested_validators(self):
+    def requirements(self):
+        return None
+
+    def readonly(self):
         return {}
 
 class Outpost(ABCOutpost):
 
-    
-
-    def defaults(self):
-        return self
-        ...
-
-    def readonly(self):
-        return self
-        ...
-
-    @property
-    def requirements(self):
-        return self
-        ...
-
-    def independent(self):
-        return self
-        ...
-
-    def map(self):
-        return ''
+    def __str__(self) -> str:
+        return f''' {"Outpost Validator Class":-^55} \n'''\
+        f''' {self.__class__.__qualname__:-^55} \n'''\
+        f'''\tmapping model: {self.model}\n'''\
+        f'''\trequirement rule: {self.requirement_rule.text_rule()}\n'''\
+        f'''\tread only fields:\n''' + \
+        '\n'.join(f'\t\t{field}: Raise = {to_raise}' for field, to_raise in self.readonly_fields.items()) + \
+        f'\n{"END":-^56}'
+        
+    ...
