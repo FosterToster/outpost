@@ -1,7 +1,9 @@
 from typing import Iterable, Union
-from enum import Enum
-from .exceptions import FieldRequirementException
 from abc import ABC, abstractmethod
+
+from .types import ModelField
+from .exceptions import FieldRequirementException
+
 
 
 # class Enum(Enum):
@@ -26,8 +28,8 @@ class NoRequirements(Rule):
 
 
 class Require(Rule):
-    def __init__(self, field:Enum) -> None:
-        if not isinstance(field, Enum):
+    def __init__(self, field:ModelField) -> None:
+        if not isinstance(field, ModelField):
             raise FieldRequirementException(f'Rule "{field}" is not model field')
 
         self._field = field
@@ -46,14 +48,14 @@ class Require(Rule):
 
 class _RequireMany(Rule):
     
-    def __init__(self, *rules:Union[Enum, Rule]) -> None:
+    def __init__(self, *rules:Union[ModelField, Rule]) -> None:
         self._rules = list()
         self.append_rules(*rules)
         
 
-    def append_rules(self, *rules:Union[Enum, Rule]):
+    def append_rules(self, *rules:Union[ModelField, Rule]):
         for rule in rules:
-            if isinstance(rule, Enum):
+            if isinstance(rule, ModelField):
                 self._rules.append(Require(rule))
             elif isinstance(rule, Rule):
                 self._rules.append(rule)
@@ -96,8 +98,8 @@ class AND(_RequireMany):
 
 
 class NOT(Rule):
-    def __init__(self, rule: Union[Enum, Rule]) -> None:
-        if isinstance(rule, Enum):
+    def __init__(self, rule: Union[ModelField, Rule]) -> None:
+        if isinstance(rule, ModelField):
             self._rule = Require(rule)
         elif isinstance(rule, Rule):
             self._rule = rule

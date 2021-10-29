@@ -1,7 +1,19 @@
 from abc import ABC, abstractmethod
 from typing import Callable, Iterable
 from dataclasses import is_dataclass,fields
-from enum import Enum
+from enum import EnumMeta, Enum
+
+class ModelFieldMeta(EnumMeta):
+    def __getattr__(class_, name: str):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            raise AttributeError(f'Model "{class_.__name__}" does not have field "{name}"')
+    
+        
+
+class ModelField(Enum, metaclass=ModelFieldMeta):
+    ...
 
 from .rules import AND, Rule, Require, NoRequirements
 
@@ -44,7 +56,7 @@ class OutpostMeta(type):
         members.update(dict((field_, field_) for field_ in fields))
         members._member_names = [key for key in members.keys()]
         # return type(f"{model.__name__}FieldsProxy", (Enum,), members)
-        return type(f"{model.__name__}", (Enum,), members)
+        return type(f"{model.__name__}", (ModelField,), members)
 
     @staticmethod
     def acquire_model_from_superclasses(superclasses_, model:type = None):
@@ -75,7 +87,7 @@ class OutpostMeta(type):
             ]
         
         if own_rule is not None:
-            if isinstance(own_rule, Enum):
+            if isinstance(own_rule, ModelField):
                 rules.append(Require(own_rule))
             else:
                 rules.append(own_rule)
@@ -174,7 +186,7 @@ class OutpostMeta(type):
 
         own_validators = dict()
 
-        def store_validators(field:Enum):
+        def store_validators(field:ModelField):
             def decorator(method):
                 own_validators[field] = method
                 return method
@@ -211,7 +223,7 @@ class ABCOutpost(metaclass=OutpostMeta):
         return class_.__type_validator__
 
     @classproperty
-    def fields(class_) -> Enum:
+    def fields(class_) -> ModelField:
         return class_.__model_fields__
 
     @classproperty
