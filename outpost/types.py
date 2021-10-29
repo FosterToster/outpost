@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Iterable
+from typing import Callable, Iterable
 from dataclasses import is_dataclass,fields
 from enum import Enum
 
@@ -104,6 +104,16 @@ class OutpostMeta(type):
         result.update(own_readonly)
         
         return result
+
+    @staticmethod
+    def inherit_nested_validators(superclasses_, own_validators):
+        result = dict()
+        for superclass in superclasses_:
+            result.update(superclass.validation_methods)
+
+        result.update(own_validators)
+        
+        return result
             
 
     def __new__(class_, name_:str, superclasses_:list, dict_:dict, *, model:type = None):
@@ -162,6 +172,25 @@ class OutpostMeta(type):
             ...
 
 
+        own_validators = dict()
+
+        def store_validators(field:Enum):
+            def decorator(method):
+                own_validators[field] = method
+                return method
+
+            return decorator
+
+        getattr(result_class, 'validators')(result_class, store_validators)
+
+        result_class.__validation_methods__ = class_.inherit_nested_validators(superclasses_, own_validators)
+
+        try:
+            delattr(result_class, 'validators')
+        except AttributeError:
+            ...
+
+
         return result_class
 
 
@@ -171,6 +200,7 @@ class ABCOutpost(metaclass=OutpostMeta):
     __model_fields__ = None
     __requirement_rule__ = None
     __readonly_fields__ = None
+    __validation_methods__ = None
 
     @classproperty
     def model(class_):
@@ -197,12 +227,22 @@ class ABCOutpost(metaclass=OutpostMeta):
             return dict()
         else:
             return class_.__readonly_fields__
+
+    @classproperty
+    def validation_methods(class_) -> dict:
+        if class_.__validation_methods__ is None:
+            return dict()
+        else:
+            return class_.__validation_methods__
     
     def requirements(self):
         return None
 
     def readonly(self):
         return {}
+
+    def validators(self, fieldvalidator:Callable):
+        return None
 
 class Outpost(ABCOutpost):
 
@@ -213,6 +253,8 @@ class Outpost(ABCOutpost):
         f'''\trequirement rule: {self.requirement_rule.text_rule()}\n'''\
         f'''\tread only fields:\n''' + \
         '\n'.join(f'\t\t{field}: Raise = {to_raise}' for field, to_raise in self.readonly_fields.items()) + \
+        f'''\n\tvalidation methods:\n''' + \
+        '\n'.join(f'\t\t{field}: method = {method.__qualname__}' for field, method in self.validation_methods.items()) + \
         f'\n{"END":-^56}'
         
     ...
