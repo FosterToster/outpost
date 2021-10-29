@@ -1,7 +1,6 @@
 from .types import Outpost
 from dataclasses import dataclass
-from .utils import validatable
-from .rules import Require, AND, OR, NOT
+from .rules import AND, OR, NOT, Require
 
 @dataclass
 class Phone:
@@ -19,42 +18,30 @@ class User:
 
 
 class UserValidator(Outpost, model=User):
+    def requirements(self):
+        return self.fields.id
     ...
 
 class PhoneValidator(Outpost, model=Phone):
+    def requirements(self):
+        return self.fields.number
     ...
 
-class SomeHarderValidator(UserValidator):
+class CreateUserValidator(UserValidator):
     
-    def requirements(self):
-        return OR(
-            self.model_fields.id,
-            AND(
-                self.model_fields.hash,
-                self.model_fields.phone,
-                NOT(self.model_fields.id)
-            )
-            
-        )
+    # def requirements(self):
+    #     return AND(
+    #         self.fields.name,
+    #         self.fields.phone
+    #     )
+
+    def readonly(self):
+        return {
+            self.fields.hash: True,
+            self.fields.id: False
+        }
+
+    ...
         
 
-# SomeHarderValidator().requirements()
-    # def nested_validators(self):
-    #     return {
-    #         self.model_fields.phone: Phone.validator
-    #     }
-
-class SomeElseValidator(UserValidator):
-    def nested_validators(self):
-        return {
-            self.model_fields.id: UserValidator
-        }
-
-class SomeHigherValidator(SomeElseValidator):
-    def nested_validators(self):
-        return {
-            self.model_fields.id: UserValidator
-        }
-
-SomeHarderValidator().requirements().resolve(('hash', 'phone'))
-print(User.__outpost_validators__)
+print(CreateUserValidator())
