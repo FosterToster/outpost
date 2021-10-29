@@ -1,5 +1,5 @@
 class AbstractError(Exception):
     ...
 
-class RequiredException(Exception):
+class FieldRequirementException(Exception):
     ...
