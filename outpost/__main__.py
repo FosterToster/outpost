@@ -1,3 +1,4 @@
+from outpost.exceptions import ValidationError
 from .types import Outpost
 from dataclasses import dataclass
 from .rules import AND, OR, NOT, Require
@@ -14,6 +15,7 @@ class User:
     hash: str
     phone: Phone
 
+# print(Outpost(model=User).validate({'some': 'dataset'}))
 
 class PhoneValidator(Outpost, model=Phone):
     def requirements(self):
@@ -41,21 +43,11 @@ class UserValidator(Outpost, model=User):
 class CreateUserValidator(UserValidator):
     
     def requirements(self):
-        return AND(
-            self.fields.name,
-            self.fields.phone,
-            OR(
-                self.fields.id,
-                self.fields.phone
-            ),
-            NOT(self.fields.hash)
-        
-        )
+        return self.fields.hash
 
     def readonly(self):
         return {
-            self.fields.hash: True,
-            self.fields.id: False
+            self.fields.name: False
         }
 
     def validators(self, fieldvalidator):
@@ -65,5 +57,7 @@ class CreateUserValidator(UserValidator):
 
     ...
         
-
-print(CreateUserValidator())
+try:
+    print(CreateUserValidator.validate({'id': '1234', 'hash': "fafsfd", 'name': 'asdf'}))
+except ValidationError as e:
+    print(e.__class__.__name__, str(e))
