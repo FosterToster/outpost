@@ -39,7 +39,7 @@ class Require(Rule):
         return self._field
 
     def resolve(self, passed_fields: Iterable[str]):
-        if not (self.field.value in passed_fields):
+        if not (self.field in passed_fields):
             raise FieldRequirementException(f"Field {self.text_rule()} required")
 
     def text_rule(self):
