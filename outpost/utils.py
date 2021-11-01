@@ -1,8 +1,12 @@
-from .types import OutpostMeta, Outpost
+from enum import EnumMeta, Enum
+class ModelFieldMeta(EnumMeta):
+    def __getattr__(class_, name: str):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            raise AttributeError(f'Model "{class_.__name__}" does not have field "{name}"')
+    
+        
 
-def validatable(class_):
-    class_.validator = create_validator(class_)
-    return class_
-
-def create_validator(class_) -> Outpost:
-    return OutpostMeta(f'{class_.__name__}BasicValidator', (Outpost, ), {}, model=class_)
+class ModelField(Enum, metaclass=ModelFieldMeta):
+    ...
