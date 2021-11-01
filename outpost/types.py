@@ -1,45 +1,18 @@
 from abc import ABC, abstractmethod
 from typing import Callable, Iterable
-from dataclasses import is_dataclass,fields
+from dataclasses import dataclass, is_dataclass,fields
 from enum import EnumMeta, Enum
+from typing import Any, Union
 
-class ModelFieldMeta(EnumMeta):
-    def __getattr__(class_, name: str):
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            raise AttributeError(f'Model "{class_.__name__}" does not have field "{name}"')
-    
-        
+from .type_validators import DataclassTypeValidator, ABCTypeValidator
 
-class ModelField(Enum, metaclass=ModelFieldMeta):
-    ...
-
+from .utils import ModelField
 from .rules import AND, Rule, Require, NoRequirements
 
 from .classproperty import classproperty
 
 
-from .exceptions import AbstractError
-
-
-class ABCTypeValidator(ABC):
-    def __init__(self, model) -> None:
-        self._model = model
-
-    @property
-    def model(self):
-        return self._model
-
-    @abstractmethod
-    def get_fieldlist(self):
-        ...
-
-
-class DataclassTypeValidator(ABCTypeValidator):
-   
-    def get_fieldlist(self):
-        return tuple(field.name for field in fields(self.model))    
+from .exceptions import AbstractError, FieldRequirementException, UnexpectedError, ValidationError
 
 
 class OutpostMeta(type):
@@ -118,16 +91,22 @@ class OutpostMeta(type):
         return result
 
     @staticmethod
-    def inherit_nested_validators(superclasses_, own_validators):
+    def inherit_supervalidators(superclasses_, own_validators):
         result = dict()
         for superclass in superclasses_:
-            result.update(superclass.validation_methods)
+            result.update(superclass.supervalidators)
 
         result.update(own_validators)
         
         return result
-            
 
+    @staticmethod
+    def choose_validator(model:type):
+        if is_dataclass(model):
+            return DataclassTypeValidator(model)
+        else:
+            return None # for future
+            
     def __new__(class_, name_:str, superclasses_:list, dict_:dict, *, model:type = None):
         # just create abc classes
         if name_ in ('ABCOutpost', 'Outpost'):
@@ -137,32 +116,26 @@ class OutpostMeta(type):
         new_dict.update(dict_)
         
         # semantic model inheritance
-        model = class_.acquire_model_from_superclasses(superclasses_, model)
-        if model is None:
-            raise AbstractError(f'Validator class "{name_}" does not have model to validate.')
-
         
         # selecting basic type validator
-        if is_dataclass(model):
-            new_dict['__type_validator__'] = DataclassTypeValidator(model)
-        # else:
-            # dict_['__type_validator__'] = SQLAlchemyTypeValidator
-        
-        new_dict['__model__'] = model
-
-        new_dict['__model_fields__'] = class_.generate_model_proxy(
-            new_dict['__model__'], 
-            new_dict['__type_validator__'].get_fieldlist()
-        )
+        # if is_dataclass(model):
+            #  = DataclassTypeValidator(model)
+       
         
         result_class = super().__new__(class_, name_, superclasses_, new_dict)
-        
-        # associating validator with model
-        # if hasattr(model, '__outpost_validators__'):
-        #     model.__outpost_validators__.append(result_class)
-        # else:
-        #     model.__outpost_validators__ = list((result_class,))
 
+        result_class.__type_validator__ = class_.choose_validator(model)
+
+        result_class.__model__ = class_.acquire_model_from_superclasses(superclasses_, model)
+        if result_class.__model__ is None:
+            raise AbstractError(f'Validator class "{name_}" does not have model to validate.')
+        
+        if result_class.__model_fields__ is None:
+            result_class.__model_fields__ = class_.generate_model_proxy(
+                result_class.__model__, 
+                result_class.__type_validator__.get_fieldlist()
+            )
+        
         result_class.__requirement_rule__ = class_.inherit_requirements(
             superclasses_, 
             getattr(result_class, 'requirements')(result_class)
@@ -186,16 +159,16 @@ class OutpostMeta(type):
 
         own_validators = dict()
 
-        def store_validators(field:ModelField):
+        def store_supervalidators(field:ModelField):
             def decorator(method):
                 own_validators[field] = method
                 return method
 
             return decorator
 
-        getattr(result_class, 'validators')(result_class, store_validators)
+        getattr(result_class, 'validators')(result_class, store_supervalidators)
 
-        result_class.__validation_methods__ = class_.inherit_nested_validators(superclasses_, own_validators)
+        result_class.__supervalidators__ = class_.inherit_supervalidators(superclasses_, own_validators)
 
         try:
             delattr(result_class, 'validators')
@@ -212,18 +185,27 @@ class ABCOutpost(metaclass=OutpostMeta):
     __model_fields__ = None
     __requirement_rule__ = None
     __readonly_fields__ = None
-    __validation_methods__ = None
+    __supervalidators__ = None
 
     @classproperty
     def model(class_):
+        if class_.__model__ is None:
+            raise AbstractError(f'Model is not defined')
+        
         return class_.__model__
 
     @classproperty
     def validator(class_) -> ABCTypeValidator:
+        if class_.__type_validator__ is None:
+            return OutpostMeta.choose_validator(class_.model)
+
         return class_.__type_validator__
 
     @classproperty
     def fields(class_) -> ModelField:
+        if class_.__model_fields__ is None:
+            return OutpostMeta.generate_model_proxy(class_.model, class_.validator.get_fieldlist())
+
         return class_.__model_fields__
 
     @classproperty
@@ -241,11 +223,11 @@ class ABCOutpost(metaclass=OutpostMeta):
             return class_.__readonly_fields__
 
     @classproperty
-    def validation_methods(class_) -> dict:
-        if class_.__validation_methods__ is None:
+    def supervalidators(class_) -> dict:
+        if class_.__supervalidators__ is None:
             return dict()
         else:
-            return class_.__validation_methods__
+            return class_.__supervalidators__
     
     def requirements(self):
         return None
@@ -253,10 +235,141 @@ class ABCOutpost(metaclass=OutpostMeta):
     def readonly(self):
         return {}
 
-    def validators(self, fieldvalidator:Callable):
+    def validators(self, supervalidator: Callable[[ModelField], Callable[[Any], Any]]):
         return None
 
+class ValidationContext:
+    def __init__(self, model:type, model_proxy: ModelField, type_validator: ABCTypeValidator, requirements: Rule, readonly: dict, validators:dict ) -> None:
+        self.model = model
+        self.fields = model_proxy
+        self.type_validator = type_validator
+        self.requirements = requirements
+        self.readonly = readonly
+        self.validators = validators
+        self.default_dataset = {}
+        self.raw_dataset = None
+        self.filtered_dataset = None
+        self.normalized_datset = {}
+    
+    @property
+    def result_dataset(self):
+        return dict((key.value, value) for key,value in self.normalized_datset)
+
+    def check_requirements(self, passed_fields: Iterable = None):
+        if passed_fields:
+            filtered_dataset_keys = passed_fields
+        else:
+            filtered_dataset_keys = self.filtered_dataset.keys()
+        try:
+            self.requirements.resolve([key for key in filtered_dataset_keys])
+        except FieldRequirementException as e:
+            raise ValidationError(f'Requirements are not satisfied: {str(e)}')
+
+    def filter_fields(self, dataset: dict = None) -> dict:
+        raw_dataset = self.default_dataset
+        if dataset:
+            raw_dataset.update(dataset)
+        else:
+            raw_dataset.update(self.raw_dataset)
+        
+        self.filtered_dataset = dict()
+
+        for field in self.fields:
+            try:
+                value = raw_dataset[field.value] # getting value from dataset by field enum value
+            except KeyError:
+                pass
+            else:
+                try:
+                    raise_readonly = self.readonly[field] # getting readonly rule for field
+                except KeyError:
+                    self.filtered_dataset[field] = value
+                else:
+                    if raise_readonly:
+                        raise ValidationError(f'Field {field} is read-only')
+        
+        return self
+
+    def defaults(self, default_datset:dict):
+        self.default_dataset = default_datset
+        return self
+
+    def supervalidate(self, supervalidator, value):
+        if callable(supervalidator):
+            return supervalidator(value)
+        elif issubclass(supervalidator, ABCOutpost):
+            return supervalidator.validate(value).map()    
+        else:
+            raise AbstractError(f'Supervalidator is not callable or subclass of ABCOutpost')
+
+    def validate_field(self, field: ModelField, value:Any):
+        annotation = self.type_validator.get_annotation(field)
+
+        if self.type_validator._is_instance(value, annotation):
+            return field
+        else:
+            raise ValidationError(f'invalid typecast: type {type(value)} is not satisfying for {annotation}')
+
+    def normalize_field(self, field:ModelField, value):
+        supervalidator = self.validators.get(field)
+        if supervalidator:
+            return self.validate_field(field, self.supervalidate(supervalidator, value))
+        else:
+            return self.validate_field(field, value)
+
+    def normalize_dataset(self, dataset:dict = None):
+
+        if dataset:
+            filtered_datset = dataset
+        else:
+            filtered_datset = self.filtered_dataset
+
+        if len(filtered_datset) == 0:
+            ValidationError('Filtered dataset is empty. Nothing to validate')
+
+        for field, value in filtered_datset.items():
+            try:
+                self.normalized_datset[field] = self.normalize_field(field, value)
+            except ValidationError as e:
+                raise ValidationError(f'{field} -> {str(e)}')
+            except UnexpectedError as e:
+                raise UnexpectedError(f'{field} -> {str(e)}')
+            except Exception as e:
+                raise UnexpectedError(f'{field}: Unexpected error with value {value}: {str(e)}') from e
+            
+        return self
+    
+    def validate(self, dataset: dict):
+        self.raw_dataset = dataset
+        
+        self.filter_fields()
+        self.check_requirements()
+        self.normalize_dataset()
+        
+        return self
+        ...
+
+    def map(self) -> Any:
+        return self.model(**self.result_dataset)        
+
+
 class Outpost(ABCOutpost):
+
+
+    @classmethod
+    def validate(class_, dataset: dict):
+        return ValidationContext(class_.model, class_.fields, \
+            class_.validator, class_.requirement_rule, \
+            class_.readonly_fields, class_.supervalidators)\
+            .validate(dataset=dataset)
+
+    def __new__(class_, *, model:type = None) -> ValidationContext:
+        if class_ != Outpost:
+            raise AbstractError(f'{class_.__name__} is for static usage only')
+
+        validator = OutpostMeta.choose_validator(model)
+        return ValidationContext(model, OutpostMeta.generate_model_proxy(model, validator.get_fieldlist()), validator, NoRequirements(), {}, {})
+
 
     def __str__(self) -> str:
         return f''' {"Outpost Validator Class":-^55} \n'''\
@@ -266,7 +379,8 @@ class Outpost(ABCOutpost):
         f'''\tread only fields:\n''' + \
         '\n'.join(f'\t\t{field}: Raise = {to_raise}' for field, to_raise in self.readonly_fields.items()) + \
         f'''\n\tvalidation methods:\n''' + \
-        '\n'.join(f'\t\t{field}: method = {method.__qualname__}' for field, method in self.validation_methods.items()) + \
+        '\n'.join(f'\t\t{field}: method = {method.__qualname__}' for field, method in self.supervalidators.items()) + \
         f'\n{"END":-^56}'
         
     ...
+
