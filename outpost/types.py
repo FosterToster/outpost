@@ -245,15 +245,22 @@ class ValidationContext:
         self.type_validator = type_validator
         self.requirements = requirements
         self.readonly = readonly
-        self.validators = validators
+        self.supervalidators = validators
         self.default_dataset = {}
         self.raw_dataset = None
+        self.enumerated_dataset = None
         self.filtered_dataset = None
         self.normalized_datset = {}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        ...
     
     @property
     def result_dataset(self):
-        return dict((key.value, value) for key,value in self.normalized_datset)
+        return dict((key.value, value) for key,value in self.normalized_datset.items())
 
     def check_requirements(self, passed_fields: Iterable = None):
         if passed_fields:
@@ -265,20 +272,27 @@ class ValidationContext:
         except FieldRequirementException as e:
             raise ValidationError(f'Requirements are not satisfied: {str(e)}')
 
-    def filter_fields(self, dataset: dict = None) -> dict:
-        raw_dataset = self.default_dataset
-        if dataset:
-            raw_dataset.update(dataset)
-        else:
-            raw_dataset.update(self.raw_dataset)
+    def enumerate_fields(self, dataset:dict = None):
+        self.enumerated_dataset = dict()
+        raw_dataset = dataset or self.raw_dataset
+        
+        for field in self.fields:
+            self.enumerated_dataset[field] = self.default_dataset.get(field) or self.default_dataset.get(field.value)
+            self.enumerated_dataset[field] = raw_dataset.get(field.value) or raw_dataset.get(field) or self.enumerated_dataset[field]
+
+        return self
+
+
+
+    def filter_fields(self, dataset: dict = None):
+        enumerated_dataset = dataset or self.enumerated_dataset
         
         self.filtered_dataset = dict()
 
         for field in self.fields:
-            try:
-                value = raw_dataset[field.value] # getting value from dataset by field enum value
-            except KeyError:
-                pass
+            value = enumerated_dataset.get(field) # getting value from dataset by field enum value
+            if value is None:
+                continue
             else:
                 try:
                     raise_readonly = self.readonly[field] # getting readonly rule for field
@@ -295,10 +309,13 @@ class ValidationContext:
         return self
 
     def supervalidate(self, supervalidator, value):
-        if callable(supervalidator):
+        if type(supervalidator) == type(ABCOutpost):
+            if issubclass(supervalidator, ABCOutpost):
+                return supervalidator.validate(value).map()
+            else:
+                raise AbstractError(f'Supervalidator is not callable or subclass of ABCOutpost')
+        elif callable(supervalidator):
             return supervalidator(value)
-        elif issubclass(supervalidator, ABCOutpost):
-            return supervalidator.validate(value).map()    
         else:
             raise AbstractError(f'Supervalidator is not callable or subclass of ABCOutpost')
 
@@ -306,12 +323,12 @@ class ValidationContext:
         annotation = self.type_validator.get_annotation(field)
 
         if self.type_validator._is_instance(value, annotation):
-            return field
+            return value
         else:
             raise ValidationError(f'invalid typecast: type {type(value)} is not satisfying for {annotation}')
 
     def normalize_field(self, field:ModelField, value):
-        supervalidator = self.validators.get(field)
+        supervalidator = self.supervalidators.get(field)
         if supervalidator:
             return self.validate_field(field, self.supervalidate(supervalidator, value))
         else:
@@ -342,6 +359,7 @@ class ValidationContext:
     def validate(self, dataset: dict):
         self.raw_dataset = dataset
         
+        self.enumerate_fields()
         self.filter_fields()
         self.check_requirements()
         self.normalize_dataset()
@@ -349,19 +367,33 @@ class ValidationContext:
         return self
         ...
 
+    def dataset(self):
+        return self.result_dataset
+
     def map(self) -> Any:
-        return self.model(**self.result_dataset)        
+        return self.model(**self.dataset())
 
 
 class Outpost(ABCOutpost):
 
-
     @classmethod
-    def validate(class_, dataset: dict):
+    def context(class_) -> ValidationContext:
         return ValidationContext(class_.model, class_.fields, \
             class_.validator, class_.requirement_rule, \
             class_.readonly_fields, class_.supervalidators)\
-            .validate(dataset=dataset)
+
+    @classmethod
+    def validate(class_, dataset: dict) -> ValidationContext:
+        return class_.context().validate(dataset=dataset)
+
+    @classmethod
+    def validation_results(class_, dataset: dict):
+        return class_.validate(dataset).dataset()
+
+    @classmethod
+    def map(class_, dataset:dict) -> Any:
+        return class_.validate(dataset).map()
+
 
     def __new__(class_, *, model:type = None) -> ValidationContext:
         if class_ != Outpost:
