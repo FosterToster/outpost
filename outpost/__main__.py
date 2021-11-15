@@ -1,6 +1,6 @@
 from outpost.exceptions import ValidationError
 from .types import Outpost
-from dataclasses import dataclass
+from dataclasses import MISSING, dataclass
 from .rules import AND, OR, NOT, Require
 
 @dataclass
@@ -67,14 +67,15 @@ try:
         'hash': "fafsfd", 
         # 'name': 'asdf'
     }
-
-    print(CreateUserValidator.validate(dataset).dataset())
-    print(CreateUserValidator.context().defaults({CreateUserValidator.fields.name: "Federico Felini", CreateUserValidator.fields.phone: {PhoneValidator.fields.number: 12341234123}}).validate(dataset).dataset())
-
+    a = CreateUserValidator.validate(dataset).map()
+    print(a)
+    print(a.name is MISSING)
+    print(CreateUserValidator.context().defaults({CreateUserValidator.fields.name: "Federico Felini", CreateUserValidator.fields.phone: {PhoneValidator.fields.number: 12341234123}}).validate(dataset).map())
+    
     with CreateUserValidator.context() as context:
         context.defaults({CreateUserValidator.fields.name: "Federico Felini", CreateUserValidator.fields.phone: {PhoneValidator.fields.number: 12341234123}})
         context.validate(dataset)
-        print(context.dataset())
+        print(context.map())
 
 except ValidationError as e:
     print(e.__class__.__name__, str(e))

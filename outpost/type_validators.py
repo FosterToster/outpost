@@ -1,8 +1,10 @@
 from typing import *
 from abc import ABC, abstractmethod
-from dataclasses import fields
+from dataclasses import MISSING, fields
 
 from .utils import ModelField
+
+from .exceptions import ExcludeValue
 
 class ABCTypeValidator(ABC):
     def __init__(self, model) -> None:
@@ -22,6 +24,10 @@ class ABCTypeValidator(ABC):
 
     @abstractmethod
     def get_annotation(self, field:ModelField):
+        ...
+
+    @abstractmethod
+    def get_missing(self):
         ...
 
 
@@ -100,9 +106,18 @@ class DataclassTypeValidator(TypingModuleValidator, ABCTypeValidator):
     def get_fieldlist(self):
         return tuple(field.name for field in fields(self.model))    
 
+    def _is_instance(self, value: Any, _type: type) -> bool:
+        if value is MISSING:
+            return True
+        else:
+            return super()._is_instance(value, _type)
+
     def get_annotation(self, field: ModelField):
         for data_field in fields(self.model):
             if data_field.name == field.value:
                 return data_field.type
         else:
             return Any
+
+    def get_missing(self):
+        return MISSING

@@ -12,7 +12,7 @@ from .rules import AND, Rule, Require, NoRequirements
 from .classproperty import classproperty
 
 
-from .exceptions import AbstractError, FieldRequirementException, UnexpectedError, ValidationError
+from .exceptions import AbstractError, FieldRequirementException, UnexpectedError, ValidationError, ExcludeValue
 
 
 class OutpostMeta(type):
@@ -250,7 +250,7 @@ class ValidationContext:
         self.raw_dataset = None
         self.enumerated_dataset = None
         self.filtered_dataset = None
-        self.normalized_datset = {}
+        self.normalized_dataset = {}
 
     def __enter__(self):
         return self
@@ -260,7 +260,8 @@ class ValidationContext:
     
     @property
     def result_dataset(self):
-        return dict((key.value, value) for key,value in self.normalized_datset.items())
+        return self.normalized_dataset
+        # return dict((key.value, value) for key,value in self.normalized_datset.items())
 
     def check_requirements(self, passed_fields: Iterable = None):
         if passed_fields:
@@ -277,8 +278,21 @@ class ValidationContext:
         raw_dataset = dataset or self.raw_dataset
         
         for field in self.fields:
-            self.enumerated_dataset[field] = self.default_dataset.get(field) or self.default_dataset.get(field.value)
-            self.enumerated_dataset[field] = raw_dataset.get(field.value) or raw_dataset.get(field) or self.enumerated_dataset[field]
+            if field in self.default_dataset.keys(): 
+                self.enumerated_dataset[field] = self.default_dataset[field]
+            elif field.value in self.default_dataset.keys():
+                self.enumerated_dataset[field] = self.default_dataset[field.value]
+
+            if field.value in raw_dataset.keys():
+                self.enumerated_dataset[field] = raw_dataset[field.value]
+            elif field in raw_dataset.keys():
+                self.enumerated_dataset[field] = raw_dataset[field]
+
+            # try:
+            #     if not (field in self.enumerated_dataset.keys()):
+            #         self.enumerated_dataset[field] = self.type_validator.get_missing()
+            # except ExcludeValue:
+            #     continue
 
         return self
 
@@ -346,7 +360,7 @@ class ValidationContext:
 
         for field, value in filtered_datset.items():
             try:
-                self.normalized_datset[field] = self.normalize_field(field, value)
+                self.normalized_dataset[field] = self.normalize_field(field, value)
             except ValidationError as e:
                 raise ValidationError(f'{field} -> {str(e)}')
             except UnexpectedError as e:
@@ -371,7 +385,17 @@ class ValidationContext:
         return self.result_dataset
 
     def map(self) -> Any:
-        return self.model(**self.dataset())
+        result = dict()
+
+        for field in self.fields:
+            try:
+                if field in self.result_dataset.keys():
+                    result[field.value] = self.result_dataset[field]
+                else:
+                    result[field.value] = self.type_validator.get_missing()
+            except ExcludeValue:
+                continue
+        return self.model(**result)
 
 
 class Outpost(ABCOutpost):

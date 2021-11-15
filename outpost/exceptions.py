@@ -9,3 +9,6 @@ class FieldRequirementException(Exception):
 
 class ValidationError(Exception):
     ...
+
+class ExcludeValue(Exception):
+    ...
