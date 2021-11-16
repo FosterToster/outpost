@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Callable, Iterable
+from typing import Callable, Dict, Iterable, List
 from dataclasses import dataclass, is_dataclass,fields
 from enum import EnumMeta, Enum
 from typing import Any, Union
@@ -10,9 +10,123 @@ from .utils import ModelField
 from .rules import AND, Rule, Require, NoRequirements
 
 from .classproperty import classproperty
-
+from .abc import ValidatorProviderProtocol, TOriginalModel
 
 from .exceptions import AbstractError, FieldRequirementException, UnexpectedError, ValidationError, ExcludeValue
+
+
+@dataclass
+class Combinator:
+    fields: Iterable[ModelField]
+    method: Callable[[Any], None]
+
+    def combine(self, dataset):
+        values = list()
+        for field in self.fields:
+            if not (field in dataset.keys()):
+                break
+            else:
+                values.append(dataset[field])
+        else:
+            self.method(*values)
+
+
+@dataclass
+class Validator:
+    field: ModelField
+    method: Callable[[Any], Any] = None
+    validator:type = None
+    check_result_type: bool = True
+
+    def validate(self, value):
+        if self.method:
+            return self.method(value)
+        else:
+            return self.validator.validate(value)
+
+class OutpostProvider(ValidatorProviderProtocol):
+    __model__: TOriginalModel = None
+    __readonly__: List[ModelField] = None
+    __defaults__: Dict[ModelField, Any] = None
+    __validators__: List[Validator] = None
+    __combinators__: List[Combinator] = None
+    __requirements__: Rule = None
+
+    @property
+    def readonly(self) -> list:
+        return self.__readonly__
+
+    @readonly.setter
+    def __set_readonly__(self, value: list):
+        self.__readonly__ = value
+    
+    @property
+    def defaults(self) -> dict:
+        return self.__defaults__
+    
+    @defaults.setter
+    def __set_defaults__(self, value: dict):
+        self.__defaults__ = value
+
+    @property
+    def requirements(self):
+        return self.__requirements__
+
+    def require(self, expression: Union[Rule, ModelField]):
+        if issubclass(type(expression), Rule):
+            new_rule = expression
+        elif issubclass(type(expression), ModelField):
+            new_rule = Require(expression)
+
+        if isinstance(self.requirements, NoRequirements):
+            self.__requirements__ = new_rule
+        elif not isinstance(self.requirements, AND):
+            self.__requirements__ = AND(self.requirements, new_rule)
+        else:
+            self.requirements.append_rules(new_rule)
+
+    @property
+    def combinators(self):
+        return self.__combinators__
+
+    def combine(self, *fields: ModelField):
+        def decorator(func):
+            self.__combinators__.append(Combinator(fields=fields, method = func))
+            return func
+
+        return decorator
+
+    @property
+    def validators(self):
+        return self.__validators__
+
+    def validator(self, field: ModelField, validator = None, check_result_type: bool = True):
+        if validator is not None:
+            self.__validators__.append(Validator(field=field, validator=validator, check_result_type=check_result_type))
+        else:
+            def decorator(func):
+                self.__validators__.append(Validator(field=field, method=func, check_result_type=check_result_type))
+                return func
+
+            return decorator
+        
+
+    def __init__(self, model: TOriginalModel):
+        super().__init__(model)
+        self.clear()
+
+    def clear(self):
+        self.__readonly__ = list()
+        self.__defaults__ = dict()
+        self.__validators__ = dict()
+        self.__combinators__ = list()
+        self.__requirements__ = NoRequirements()
+
+    @classmethod
+    def from_model(class_, model:TOriginalModel) -> ValidatorProviderProtocol[TOriginalModel]:
+        return class_(model)
+
+    
 
 
 class OutpostMeta(type):

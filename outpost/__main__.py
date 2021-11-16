@@ -1,6 +1,6 @@
 from outpost.exceptions import ValidationError
-from .types import Outpost
-from dataclasses import MISSING, dataclass
+from .types import Outpost, OutpostProvider
+from dataclasses import dataclass
 from .rules import AND, OR, NOT, Require
 
 @dataclass
@@ -15,67 +15,27 @@ class User:
     hash: str
     phone: Phone
 
-# print(Outpost(model=User).validate({'some': 'dataset'}))
 
-class PhoneValidator(Outpost, model=Phone):
-    def requirements(self):
-        return self.fields.number
-    ...
-
-
-class UserValidator(Outpost, model=User):
+class UserValidator:
     
+    config = OutpostProvider.from_model(User)
 
-    def requirements(self):
-        return self.fields.id
+    config.model.
 
-    def validators(self, supervalidator):
-        
-        supervalidator(self.fields.phone)(PhoneValidator)
+    config.require(config.model.id)
+    config.require(config.model.hash)
 
-        @supervalidator(self.fields.id)
-        def idvalidator(value):
-            return value
+    @config.validator(config.model.name, check_result_type=False)
+    def name_validator(value):
+        return str(value)
 
+    config.readonly.append(config.model.id)
+    config.readonly.append(config.model.hash)
 
+    config.defaults[config.model.name] = 'Federico Felini'
 
-    ...
+    @config.combine(config.model.name, config.model.id)
+    def name_id_combination(name, id):
+        print('fuck')
 
-
-class CreateUserValidator(UserValidator):
-    
-    def requirements(self):
-        return self.fields.hash
-
-    # def readonly(self):
-    #     return {
-    #         self.fields.name: False
-    #     }
-
-    def validators(self, supervalidator):
-        
-        @supervalidator(self.fields.name)
-        def namevalidator(v):
-            return v
-
-    ...
-        
-try:
-
-    dataset = {
-        'id': 1234, 
-        'hash': "fafsfd", 
-        # 'name': 'asdf'
-    }
-    a = CreateUserValidator.validate(dataset).map()
-    print(a)
-    print(a.name is MISSING)
-    print(CreateUserValidator.context().defaults({CreateUserValidator.fields.name: "Federico Felini", CreateUserValidator.fields.phone: {PhoneValidator.fields.number: 12341234123}}).validate(dataset).map())
-    
-    with CreateUserValidator.context() as context:
-        context.defaults({CreateUserValidator.fields.name: "Federico Felini", CreateUserValidator.fields.phone: {PhoneValidator.fields.number: 12341234123}})
-        context.validate(dataset)
-        print(context.map())
-
-except ValidationError as e:
-    print(e.__class__.__name__, str(e))
+print(UserValidator.config)
