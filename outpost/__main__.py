@@ -39,8 +39,6 @@ class UserValidator(Outpost):
 class CreateUserValidator(UserValidator):
     config = UserValidator.config
 
-    config.readonly.append(config.fields.id)
-
     config.require(
         (config.fields.hash |
         config.fields.id) &
@@ -51,5 +49,17 @@ class CreateUserValidator(UserValidator):
     
     ...
 
+dataset = {
+    'id': 1,
+    'name': 'Sadric',
+    'phone': 7
+}
 
-print(CreateUserValidator.model)
+try:
+    with CreateUserValidator.context() as context:
+        context.filter_readonly(dataset, raise_readonly=True)
+        context.validate()
+        print(context.export_dataset())
+        print(context.map())
+except ValidationError as e:
+    print(e)

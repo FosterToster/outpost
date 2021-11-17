@@ -1,12 +1,13 @@
+from types import prepare_class
 from typing import Callable, Dict, Iterable, List
-from dataclasses import fields
+from dataclasses import MISSING, fields
 from typing import Any, Union
 
 from .rules import AND, Rule, Require, NoRequirements
 from .utils import ModelField
 
 
-from .abc import GenericValidatorProvider, TOriginalModel, ABCOutpost, Validator, Combinator
+from .abc import GenericValidatorProvider, TOriginalModel, ABCOutpost, ValidationConfig, Validator, Combinator
 
 from .exceptions import AbstractError, FieldRequirementException, UnexpectedError, ValidationError, ExcludeValue
 
@@ -80,28 +81,137 @@ class OutpostProvider(GenericValidatorProvider):
         return class_(model)
 
 
+class _EXCLUDE_MISSING:
+        ...
 
-
-# class ValidationContext:
-#     def __init__(self, model:type, model_proxy: ModelField, type_validator: ABCTypeValidator, requirements: Rule, readonly: dict, validators:dict ) -> None:
-#         self.model = model
-#         self.fields = model_proxy
-#         self.type_validator = type_validator
-#         self.requirements = requirements
-#         self.readonly = readonly
-#         self.supervalidators = validators
-#         self.default_dataset = {}
-#         self.raw_dataset = None
-#         self.enumerated_dataset = None
-#         self.filtered_dataset = None
-#         self.normalized_dataset = {}
-
-#     def __enter__(self):
-#         return self
-
-#     def __exit__(self, *_):
-#         ...
+class ValidationContext:
     
+
+    def __init__(self, config: ValidationConfig) -> None:
+        self.config: ValidationConfig = config
+        self.dataset = dict()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        ...
+
+    def current_dataset(self, *, missing_value = _EXCLUDE_MISSING) -> dict:
+        result = dict()
+        for field in self.config.fields:
+            if field in self.dataset:
+                if isinstance(self.dataset[field], ValidationContext):
+                    result[field] = self.dataset[field].current_dataset(missing_value=missing_value)
+                else:
+                    result[field] = self.dataset[field]
+            else:
+                if missing_value is _EXCLUDE_MISSING:
+                    continue
+                else:
+                    result[field] = missing_value
+        
+        return result
+
+    def export_dataset(self, *, missing_value = _EXCLUDE_MISSING) -> dict:
+        result = dict()
+        for field in self.config.fields:
+            if field in self.dataset:
+                if isinstance(self.dataset[field], ValidationContext):
+                    result[field.value] = self.dataset[field].current_dataset(missing_value=missing_value)
+                else:
+                    result[field.value] = self.dataset[field]
+            else:
+                if missing_value is _EXCLUDE_MISSING:
+                    continue
+                else:
+                    result[field.value] = missing_value
+        
+        return result
+
+    def enumerize_dataset(self, dataset: dict = None,*, raise_unnecessary = False):
+        if dataset:
+            self.dataset = dataset
+
+        result = dict()
+        
+        for field in self.config.fields:
+            if field.value in self.dataset:
+                result[field] = self.dataset.pop(field.value)
+            elif field in self.dataset:
+                result[field] = self.dataset.pop(field)
+
+        if (len(self.dataset) > 0) and raise_unnecessary:
+            raise ValidationError(f'Unnecessary fields has been passed: {[str(x) for x in self.dataset.keys()]}') 
+
+        self.dataset = result
+        return self
+
+    def filter_readonly(self, dataset:dict = None,*, raise_readonly = False):
+        if dataset:
+            self.enumerize_dataset(dataset)
+
+        result = dict()
+
+        for field in self.config.fields:
+            if field in self.dataset:
+                if field in self.config.readonly:
+                    if raise_readonly:
+                        raise ValidationError(f'Read-Only field has been passed: {field.value}')
+                    else:
+                        continue
+                else:
+                    result[field] = self.dataset.pop(field)
+                
+
+        self.dataset = result
+        return self
+
+    def check_requirements(self, dataset:dict = None):
+        if dataset:
+            self.filter_readonly(dataset)
+
+        try:
+            self.config.requirements.resolve([x for x in self.dataset.keys()])
+        except FieldRequirementException:
+            raise ValidationError(f'Passed dataset is not satisfying for requirement rule: {self.config.requirements.text_rule()}')
+        return self
+
+    def validate(self, dataset:dict = None):
+        if dataset:
+            self.check_requirements(dataset)
+
+        return self
+
+    def validated_dataset(self, dataset:dict = None, *, exclude_missing = False, missing_value = None):
+        if dataset:
+            self.validate(dataset)
+
+        return self.export_dataset(missing_value=_EXCLUDE_MISSING if exclude_missing else missing_value)
+
+    def map(self, dataset:dict = None, *, exclude_missing = False, missing_value = None):
+        if dataset:
+            self.validate(dataset)
+
+        result = dict()
+        for field in self.config.fields:
+            if field in self.dataset:
+                if isinstance(self.dataset[field], ValidationContext):
+                    result[field.value] = self.dataset[field].map(exclude_missing=exclude_missing, missing_value=missing_value)
+                else:
+                    result[field.value] = self.dataset[field]
+            else:
+                if exclude_missing:
+                    continue
+                else:
+                    result[field.value] = missing_value
+        
+        return self.config.model(**result)
+        # return result
+
+        
+
+
 #     @property
 #     def result_dataset(self):
 #         return self.normalized_dataset
@@ -244,23 +354,21 @@ class OutpostProvider(GenericValidatorProvider):
 
 class Outpost(ABCOutpost):
     ...
-    # @classmethod
-    # def context(class_) -> ValidationContext:
-    #     return ValidationContext(class_.model, class_.fields, \
-    #         class_.validator, class_.requirement_rule, \
-    #         class_.readonly_fields, class_.supervalidators)\
+    @classmethod
+    def context(class_) -> ValidationContext:
+        return ValidationContext(class_.__config__)
 
-    # @classmethod
-    # def validate(class_, dataset: dict) -> ValidationContext:
-    #     return class_.context().validate(dataset=dataset)
+    @classmethod
+    def validate(class_, dataset: dict) -> ValidationContext:
+        return class_.context().validate(dataset=dataset)
 
-    # @classmethod
-    # def validation_results(class_, dataset: dict):
-    #     return class_.validate(dataset).dataset()
+    @classmethod
+    def validation_results(class_, dataset: dict, *, exclude_missing = False, missing_value = None):
+        return class_.validate(dataset).validated_dataset(exclude_missing=exclude_missing, missing_value=missing_value)
 
-    # @classmethod
-    # def map(class_, dataset:dict) -> Any:
-    #     return class_.validate(dataset).map()
+    @classmethod
+    def create_model(class_, dataset:dict, *, exclude_missing = False, missing_value = None) -> Any:
+        return class_.validate(dataset).map(exclude_missing=exclude_missing, missing_value=missing_value)
 
 
     # def __new__(class_, *, model:type = None) -> ValidationContext:
