@@ -1,7 +1,8 @@
-from outpost.exceptions import ValidationError
-from .types import Outpost
-from dataclasses import MISSING, dataclass
-from .rules import AND, OR, NOT, Require
+from outpost.exceptions import ExcludeValue, ValidationError
+from outpost.rules import Require
+from .types import Outpost, OutpostProvider
+from dataclasses import dataclass
+
 
 @dataclass
 class Phone:
@@ -13,69 +14,42 @@ class User:
     id: int
     name: str
     hash: str
+    ro: str
     phone: Phone
 
-# print(Outpost(model=User).validate({'some': 'dataset'}))
+class UserValidator(Outpost):
+    config = OutpostProvider.from_model(User)
 
-class PhoneValidator(Outpost, model=Phone):
-    def requirements(self):
-        return self.fields.number
-    ...
-
-
-class UserValidator(Outpost, model=User):
     
+    @config.combine(config.fields.name, config.fields.hash)
+    def combine_name_hash_(name, hash):
+        raise Exception(f'WOW: {name}, {hash}')
 
-    def requirements(self):
-        return self.fields.id
+    @config.validator(config.fields.id, check_result_type=False)
+    def check_id(value):
+        return int(value)
 
-    def validators(self, supervalidator):
-        
-        supervalidator(self.fields.phone)(PhoneValidator)
+    config.readonly.append(config.fields.ro)
 
-        @supervalidator(self.fields.id)
-        def idvalidator(value):
-            return value
+    config.defaults[config.fields.name] = "Default User"
 
-
-
-    ...
+    config.require(config.fields.name)
 
 
 class CreateUserValidator(UserValidator):
+    config = UserValidator.config
+
+    config.readonly.append(config.fields.id)
+
+    config.require(
+        (config.fields.hash |
+        config.fields.id) &
+        config.fields.phone
+        )
+    # config.require(config.fields.name)
+
     
-    def requirements(self):
-        return self.fields.hash
-
-    # def readonly(self):
-    #     return {
-    #         self.fields.name: False
-    #     }
-
-    def validators(self, supervalidator):
-        
-        @supervalidator(self.fields.name)
-        def namevalidator(v):
-            return v
-
     ...
-        
-try:
 
-    dataset = {
-        'id': 1234, 
-        'hash': "fafsfd", 
-        # 'name': 'asdf'
-    }
-    a = CreateUserValidator.validate(dataset).map()
-    print(a)
-    print(a.name is MISSING)
-    print(CreateUserValidator.context().defaults({CreateUserValidator.fields.name: "Federico Felini", CreateUserValidator.fields.phone: {PhoneValidator.fields.number: 12341234123}}).validate(dataset).map())
-    
-    with CreateUserValidator.context() as context:
-        context.defaults({CreateUserValidator.fields.name: "Federico Felini", CreateUserValidator.fields.phone: {PhoneValidator.fields.number: 12341234123}})
-        context.validate(dataset)
-        print(context.map())
 
-except ValidationError as e:
-    print(e.__class__.__name__, str(e))
+print(CreateUserValidator.model)
