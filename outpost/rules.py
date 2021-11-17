@@ -1,7 +1,6 @@
 from typing import Iterable, Union
 from abc import ABC, abstractmethod
 
-from .types import ModelField
 from .exceptions import FieldRequirementException
 
 
@@ -19,6 +18,19 @@ class Rule(ABC):
     def text_rule(self):
         ...
 
+    def __or__(self, other):
+        if isinstance(self, OR):
+            return OR(*self.rules, other)
+        else:
+            return OR(self, other)
+
+    def __and__(self, other):
+        if isinstance(self, AND):
+            return AND(*self.rules, other)
+        else:
+            return AND(self, other)
+    ...
+
 class NoRequirements(Rule):
     def resolve(self, _):
         ...
@@ -28,7 +40,7 @@ class NoRequirements(Rule):
 
 
 class Require(Rule):
-    def __init__(self, field:ModelField) -> None:
+    def __init__(self, field:'ModelField') -> None:
         if not isinstance(field, ModelField):
             raise FieldRequirementException(f'Rule "{field}" is not model field')
 
@@ -48,12 +60,12 @@ class Require(Rule):
 
 class _RequireMany(Rule):
     
-    def __init__(self, *rules:Union[ModelField, Rule]) -> None:
+    def __init__(self, *rules:Union['ModelField', Rule]) -> None:
         self._rules = list()
         self.append_rules(*rules)
         
 
-    def append_rules(self, *rules:Union[ModelField, Rule]):
+    def append_rules(self, *rules:Union['ModelField', Rule]):
         for rule in rules:
             if isinstance(rule, ModelField):
                 self._rules.append(Require(rule))
@@ -98,7 +110,7 @@ class AND(_RequireMany):
 
 
 class NOT(Rule):
-    def __init__(self, rule: Union[ModelField, Rule]) -> None:
+    def __init__(self, rule: Union['ModelField', Rule]) -> None:
         if isinstance(rule, ModelField):
             self._rule = Require(rule)
         elif isinstance(rule, Rule):
@@ -122,7 +134,7 @@ class NOT(Rule):
         return f'NOT {self.rule.text_rule()}'
             
 
-
+from .utils import ModelField
 
                     
         

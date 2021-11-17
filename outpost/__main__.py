@@ -1,7 +1,8 @@
-from outpost.exceptions import ValidationError
+from outpost.exceptions import ExcludeValue, ValidationError
+from outpost.rules import Require
 from .types import Outpost, OutpostProvider
 from dataclasses import dataclass
-from .rules import AND, OR, NOT, Require
+
 
 @dataclass
 class Phone:
@@ -13,29 +14,42 @@ class User:
     id: int
     name: str
     hash: str
+    ro: str
     phone: Phone
 
-
-class UserValidator:
-    
+class UserValidator(Outpost):
     config = OutpostProvider.from_model(User)
 
-    config.model.
+    
+    @config.combine(config.fields.name, config.fields.hash)
+    def combine_name_hash_(name, hash):
+        raise Exception(f'WOW: {name}, {hash}')
 
-    config.require(config.model.id)
-    config.require(config.model.hash)
+    @config.validator(config.fields.id, check_result_type=False)
+    def check_id(value):
+        return int(value)
 
-    @config.validator(config.model.name, check_result_type=False)
-    def name_validator(value):
-        return str(value)
+    config.readonly.append(config.fields.ro)
 
-    config.readonly.append(config.model.id)
-    config.readonly.append(config.model.hash)
+    config.defaults[config.fields.name] = "Default User"
 
-    config.defaults[config.model.name] = 'Federico Felini'
+    config.require(config.fields.name)
 
-    @config.combine(config.model.name, config.model.id)
-    def name_id_combination(name, id):
-        print('fuck')
 
-print(UserValidator.config)
+class CreateUserValidator(UserValidator):
+    config = UserValidator.config
+
+    config.readonly.append(config.fields.id)
+
+    config.require(
+        (config.fields.hash |
+        config.fields.id) &
+        config.fields.phone
+        )
+    # config.require(config.fields.name)
+
+    
+    ...
+
+
+print(CreateUserValidator.model)
