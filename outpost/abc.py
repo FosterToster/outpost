@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from .rules import AND, _RequireMany, NoRequirements, Require, Rule
 from .utils import ModelField
 from .classproperty import classproperty
-from .exceptions import AbstractError
+from .exceptions import AbstractError, NativeValidationError, ValidationError
 
 
 @dataclass
@@ -35,7 +35,10 @@ class Validator:
         if self.method:
             return self.method(value)
         else:
-            return self.validator.validate(value)
+            if isinstance(value, dict):
+                return self.validator.validate(value)
+            else:
+                raise NativeValidationError('Invalid typecast. Object required.')
 
 
 TOriginalModel = TypeVar('TOriginalModel')

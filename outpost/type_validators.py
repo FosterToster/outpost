@@ -19,16 +19,9 @@ class ABCTypeValidator(ABC):
         ...
 
     @abstractmethod
-    def get_fieldlist(self):
-        ...
-
-    @abstractmethod
     def get_annotation(self, field:ModelField):
         ...
 
-    @abstractmethod
-    def get_missing(self):
-        ...
 
 
 class TypingModuleValidator:

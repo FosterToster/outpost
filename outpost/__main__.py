@@ -1,6 +1,6 @@
-from outpost.exceptions import ExcludeValue, ValidationError
-from outpost.rules import Require
+from outpost.exceptions import ValidationError
 from .types import Outpost, OutpostProvider
+from typing import Optional
 from dataclasses import dataclass
 
 
@@ -13,53 +13,87 @@ class Phone:
 class User:
     id: int
     name: str
-    hash: str
-    ro: str
+    hash: Optional[int]
     phone: Phone
+
+class PhoneValidator(Outpost):
+    config = OutpostProvider.from_model(Phone)
+    config.require(config.fields.number)
+
+    @config.validator(config.fields.number)
+    def number(value):
+        st = str(value).strip()
+        if st.startswith('+'):
+            st = st.replace('+', '')
+
+        if not st.isnumeric():
+            raise ValidationError('phone number can`t contain letters')
+
+        if st.startswith('7'):
+            st = st.replace('7', '8')
+        
+        if len(st) < 11:
+            raise ValidationError('phone number is too small. 11 symbols required.')
+
+        return int(st)
+
 
 class UserValidator(Outpost):
     config = OutpostProvider.from_model(User)
+    config.validator(config.fields.phone, PhoneValidator)
 
-    
-    @config.combine(config.fields.name, config.fields.hash)
-    def combine_name_hash_(name, hash):
-        raise Exception(f'WOW: {name}, {hash}')
+class UpdateUserValidator(UserValidator):
+    config = UserValidator.config
 
-    @config.validator(config.fields.id, check_result_type=False)
-    def check_id(value):
-        return int(value)
-
-    config.readonly.append(config.fields.ro)
-
-    config.defaults[config.fields.name] = "Default User"
-
-    config.require(config.fields.name)
-
+    config.require(config.fields.id & (
+        config.fields.hash |
+        config.fields.name |
+        config.fields.phone
+    ))
 
 class CreateUserValidator(UserValidator):
     config = UserValidator.config
 
     config.require(
+        config.fields.name &
         (config.fields.hash |
         config.fields.id) &
         config.fields.phone
         )
-    # config.require(config.fields.name)
+
+    config.defaults[config.fields.name] = "Default user"
 
     
     ...
 
-dataset = {
+print(CreateUserValidator.requirements.text_rule())
+
+create_dataset = {
     'id': 1,
     'name': 'Sadric',
-    'phone': 7
+    'hash': None,
+    'phone': {
+        'number': "+79639499629"
+    }
+}
+
+update_dataset = {
+    'id': 1,
+    'name': 'Vigor',
+
 }
 
 try:
-    with CreateUserValidator.context() as context:
-        context.filter_readonly(dataset, raise_readonly=True)
-        context.validate()
-        print(context.export_dataset())
-        print(context.map())
+    a = CreateUserValidator.create_model(create_dataset)
 except ValidationError as e:
-    print(e)
+    a = e
+
+print('create:', a)
+
+
+try:
+    a = UpdateUserValidator.create_model(update_dataset)
+except ValidationError as e:
+    a = e
+
+print('update:', a)
