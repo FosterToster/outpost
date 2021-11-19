@@ -105,41 +105,37 @@ class ValidationContext:
     def __exit__(self, *_):
         ...
 
-    def current_dataset(self, *, missing_value = _EXCLUDE_MISSING) -> dict:
+    def _deep_execute_on_dataset(self, *, method=None, replace_field=False):
         result = dict()
+        method = method if method is not None else lambda x: x
         for field in self.config.fields:
-            if field in self.dataset:
+            result_field = field.name if replace_field else field
+            if field in self.dataset:    
                 if isinstance(self.dataset[field], ValidationContext):
-                    result[field] = self.dataset[field].current_dataset(missing_value=missing_value)
+                    result[result_field] = method(self.dataset[field])
+                elif (isinstance(self.dataset[field], Iterable)) and not(isinstance(self.dataset[field], dict) or isinstance(self.dataset[field], str)):
+                    result[result_field] = [method(tmp) if isinstance(tmp, ValidationContext) else tmp for tmp in self.dataset[field]]
+                    if isinstance(self.dataset[field], tuple):
+                        result[result_field] = tuple(result[result_field])
                 else:
-                    result[field] = self.dataset[field]
+                    result[result_field] = self.dataset[field]
             else:
-                if missing_value is _EXCLUDE_MISSING:
+                if self.config.missing_value is _EXCLUDE_MISSING:
                     continue
                 else:
-                    result[field] = missing_value
+                    result[result_field] = self.config.missing_value
         
         return result
 
-    def export_dataset(self, *, missing_value = _EXCLUDE_MISSING) -> dict:
-        result = dict()
-        for field in self.config.fields:
-            if field in self.dataset:
-                if isinstance(self.dataset[field], ValidationContext):
-                    result[field.value] = self.dataset[field].export_dataset(missing_value=missing_value)
-                else:
-                    result[field.value] = self.dataset[field]
-            else:
-                if missing_value is _EXCLUDE_MISSING:
-                    continue
-                else:
-                    result[field.value] = missing_value
-        
-        return result
+    def current_dataset(self) -> dict:
+        return self._deep_execute_on_dataset(method=lambda x: x.current_dataset(), replace_field=False)
+
+    def export_dataset(self) -> dict:
+        return self._deep_execute_on_dataset(method=lambda x: x.export_dataset(), replace_field=True)
 
     def enumerize_dataset(self, dataset: dict = None,*, raise_unnecessary = False):
         if dataset is not None:
-            self.dataset = dataset
+            self.dataset = {**dataset}
 
         result = dict()
         
@@ -188,27 +184,6 @@ class ValidationContext:
             raise ValidationError(f'Given dataset does not satisfying the requirements: {self.config.requirements.text_rule()}')
         return self
 
-    def validate_type(self, value:Any, annotation:type):
-        tp = TypingModuleValidator()
-        try:
-
-            if isinstance(value, ValidationContext):
-                ...
-            elif tp._is_typing_alias(str(annotation)):
-                ...
-            elif (annotation is bool) and isinstance(value, str):
-                if value.strip().lower() == 'true':
-                    return True
-                elif value.strip().lower() == 'false':
-                    return False
-                else:
-                    raise ValueError(f'invalid literal for bool: "{value}"')
-            else:
-                return annotation(value)
-        except (ValueError, TypeError) as e:
-            raise ValidationError(str(e))
-        ...
-
     def get_annotation(self, field:ModelField):
         for model_field in fields(self.config.model):
             if model_field.name == field.value:
@@ -251,7 +226,13 @@ class ValidationContext:
             args = annotation.__args__
             for arg in args:
                 try:
-                    return self.resolve_annotations(field, arg, value, validator)
+                    if arg is type(None):
+                        if value is None:
+                            return None
+                        else:
+                            raise NativeValidationError('Value is not None')
+                    else:
+                        return self.resolve_annotations(field, arg, value, validator)
                 except NativeValidationError as e:
                     native_error = e
                     continue
@@ -308,7 +289,9 @@ class ValidationContext:
                 return result
             else:
                 try:
-                    if (annotation is bool) and isinstance(value, str):
+                    if value is None:
+                        raise NativeValidationError('value is None')
+                    elif (annotation is bool) and isinstance(value, str):
                         if value.strip().lower() == 'true':
                             return True
                         elif value.strip().lower() == 'false':
@@ -342,34 +325,16 @@ class ValidationContext:
         return self
 
 
-    def validated_dataset(self, dataset:dict = None, *, exclude_missing = False, missing_value = None):
+    def validated_dataset(self, dataset:dict = None):
         if dataset is not None:
             self.validate(dataset)
 
-        return self.export_dataset(missing_value=_EXCLUDE_MISSING if exclude_missing else missing_value)
+        return self.export_dataset()
 
-    def map(self, dataset:dict = None, *, exclude_missing = False, missing_value = None):
+    def map(self, dataset:dict = None):
         if dataset is not None:
             self.validate(dataset)
-
-        result = dict()
-        for field in self.config.fields:
-            if field in self.dataset:
-                if isinstance(self.dataset[field], ValidationContext):
-                    result[field.value] = self.dataset[field].map(exclude_missing=exclude_missing, missing_value=missing_value)
-                elif (isinstance(self.dataset[field], Iterable)) and not(isinstance(self.dataset[field], dict) or isinstance(self.dataset[field], str)):
-                    result[field.value] = [tmp.map(exclude_missing=exclude_missing, missing_value=missing_value) if isinstance(tmp, ValidationContext) else tmp  for tmp in self.dataset[field]]
-                    if isinstance(self.dataset[field], tuple):
-                        result[field.value] = tuple(result[field.value])
-                else:
-                    result[field.value] = self.dataset[field]
-            else:
-                if exclude_missing:
-                    continue
-                else:
-                    result[field.value] = missing_value
-        
-        return self.config.model(**result)
+        return self.config.model(**self._deep_execute_on_dataset(method=lambda x: x.map(), replace_field=True))
  
 
 class Outpost(ABCOutpost):
@@ -383,12 +348,12 @@ class Outpost(ABCOutpost):
         return class_.context().validate(dataset=dataset)
 
     @classmethod
-    def validation_results(class_, dataset: dict, *, exclude_missing = False, missing_value = None):
-        return class_.validate(dataset).validated_dataset(exclude_missing=exclude_missing, missing_value=missing_value)
+    def validation_results(class_, dataset: dict):
+        return class_.validate(dataset).validated_dataset()
 
     @classmethod
-    def create_model(class_, dataset:dict, *, exclude_missing = False, missing_value = None) -> Any:
-        return class_.validate(dataset).map(exclude_missing=exclude_missing, missing_value=missing_value)
+    def create_model(class_, dataset:dict) -> Any:
+        return class_.validate(dataset).map()
 
     def __call__(self, *_: Any, **__: Any) -> Any:
         raise AbstractError(f'{self.__class__.__name__} is for static usage only')
