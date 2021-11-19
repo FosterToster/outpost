@@ -31,10 +31,10 @@ class OutpostProvider(GenericValidatorProvider):
 
     def validator(self, field: ModelField, validator: 'Outpost' = None, check_result_type: bool = True):
         if validator is not None:
-            self.validators.append(Validator(field=field, validator=validator, check_result_type=check_result_type))
+            self.validators[field] = Validator(validator=validator, check_result_type=check_result_type)
         else:
             def decorator(func):
-                self.validators.append(Validator(field=field, method=func, check_result_type=check_result_type))
+                self.validators[field] = Validator(method=func, check_result_type=check_result_type)
                 return func
 
             return decorator
@@ -66,7 +66,7 @@ class OutpostProvider(GenericValidatorProvider):
     def clear(self):
         self.__readonly__ = list()
         self.__defaults__ = dict()
-        self.__validators__ = list()
+        self.__validators__ = dict()
         self.__combinators__ = list()
         self.__requirements__ = NoRequirements()
 
@@ -93,11 +93,6 @@ class ValidationContext:
         self.parent_validator_name = parent_validator_name
         self.config: ValidationConfig = config
         self.fields_annotations = dict((field, self.get_annotation(field)) for field in self.config.fields)
-        self.field_validators = dict()
-        for field in self.config.fields:
-            for validator in self.config.validators:
-                if validator.field == field:
-                    self.field_validators[field] = validator
         self.dataset = dict()
 
     def __enter__(self):
@@ -231,12 +226,7 @@ class ValidationContext:
         return str(annotation).startswith('typing.Union')
 
     def find_validator(self, field: ModelField):
-        return self.field_validators.get(field)
-        # for validator in self.config.validators:
-        #     if validator.field == field:
-        #         return validator
-        # else:
-        #     return None
+        return self.config.validators.get(field)
 
     @staticmethod
     def getname(obj):
@@ -376,150 +366,7 @@ class ValidationContext:
                     result[field.value] = missing_value
         
         return self.config.model(**result)
-        # return result
-
-        
-
-
-#     @property
-#     def result_dataset(self):
-#         return self.normalized_dataset
-#         # return dict((key.value, value) for key,value in self.normalized_datset.items())
-
-#     def check_requirements(self, passed_fields: Iterable = None):
-#         if passed_fields:
-#             filtered_dataset_keys = passed_fields
-#         else:
-#             filtered_dataset_keys = self.filtered_dataset.keys()
-#         try:
-#             self.requirements.resolve([key for key in filtered_dataset_keys])
-#         except FieldRequirementException as e:
-#             raise ValidationError(f'Requirements are not satisfied: {str(e)}')
-
-#     def enumerate_fields(self, dataset:dict = None):
-#         self.enumerated_dataset = dict()
-#         raw_dataset = dataset or self.raw_dataset
-        
-#         for field in self.fields:
-#             if field in self.default_dataset.keys(): 
-#                 self.enumerated_dataset[field] = self.default_dataset[field]
-#             elif field.value in self.default_dataset.keys():
-#                 self.enumerated_dataset[field] = self.default_dataset[field.value]
-
-#             if field.value in raw_dataset.keys():
-#                 self.enumerated_dataset[field] = raw_dataset[field.value]
-#             elif field in raw_dataset.keys():
-#                 self.enumerated_dataset[field] = raw_dataset[field]
-
-#             # try:
-#             #     if not (field in self.enumerated_dataset.keys()):
-#             #         self.enumerated_dataset[field] = self.type_validator.get_missing()
-#             # except ExcludeValue:
-#             #     continue
-
-#         return self
-
-
-
-#     def filter_fields(self, dataset: dict = None):
-#         enumerated_dataset = dataset or self.enumerated_dataset
-        
-#         self.filtered_dataset = dict()
-
-#         for field in self.fields:
-#             value = enumerated_dataset.get(field) # getting value from dataset by field enum value
-#             if value is None:
-#                 continue
-#             else:
-#                 try:
-#                     raise_readonly = self.readonly[field] # getting readonly rule for field
-#                 except KeyError:
-#                     self.filtered_dataset[field] = value
-#                 else:
-#                     if raise_readonly:
-#                         raise ValidationError(f'Field {field} is read-only')
-        
-#         return self
-
-#     def defaults(self, default_datset:dict):
-#         self.default_dataset = default_datset
-#         return self
-
-#     def supervalidate(self, supervalidator, value):
-#         if type(supervalidator) == type(ABCOutpost):
-#             if issubclass(supervalidator, ABCOutpost):
-#                 return supervalidator.validate(value).map()
-#             else:
-#                 raise AbstractError(f'Supervalidator is not callable or subclass of ABCOutpost')
-#         elif callable(supervalidator):
-#             return supervalidator(value)
-#         else:
-#             raise AbstractError(f'Supervalidator is not callable or subclass of ABCOutpost')
-
-#     def validate_field(self, field: ModelField, value:Any):
-#         annotation = self.type_validator.get_annotation(field)
-
-#         if self.type_validator._is_instance(value, annotation):
-#             return value
-#         else:
-#             raise ValidationError(f'invalid typecast: type {type(value)} is not satisfying for {annotation}')
-
-#     def normalize_field(self, field:ModelField, value):
-#         supervalidator = self.supervalidators.get(field)
-#         if supervalidator:
-#             return self.validate_field(field, self.supervalidate(supervalidator, value))
-#         else:
-#             return self.validate_field(field, value)
-
-#     def normalize_dataset(self, dataset:dict = None):
-
-#         if dataset is not None:
-#             filtered_datset = dataset
-#         else:
-#             filtered_datset = self.filtered_dataset
-
-#         if len(filtered_datset) == 0:
-#             ValidationError('Filtered dataset is empty. Nothing to validate')
-
-#         for field, value in filtered_datset.items():
-#             try:
-#                 self.normalized_dataset[field] = self.normalize_field(field, value)
-#             except ValidationError as e:
-#                 raise ValidationError(f'{field} -> {str(e)}')
-#             except UnexpectedError as e:
-#                 raise UnexpectedError(f'{field} -> {str(e)}')
-#             except Exception as e:
-#                 raise UnexpectedError(f'{field}: Unexpected error with value {value}: {str(e)}') from e
-            
-#         return self
-    
-#     def validate(self, dataset: dict):
-#         self.raw_dataset = dataset
-        
-#         self.enumerate_fields()
-#         self.filter_fields()
-#         self.check_requirements()
-#         self.normalize_dataset()
-        
-#         return self
-#         ...
-
-#     def dataset(self):
-#         return self.result_dataset
-
-#     def map(self) -> Any:
-#         result = dict()
-
-#         for field in self.fields:
-#             try:
-#                 if field in self.result_dataset.keys():
-#                     result[field.value] = self.result_dataset[field]
-#                 else:
-#                     result[field.value] = self.type_validator.get_missing()
-#             except ExcludeValue:
-#                 continue
-#         return self.model(**result)
-
+ 
 
 class Outpost(ABCOutpost):
     ...
@@ -539,24 +386,5 @@ class Outpost(ABCOutpost):
     def create_model(class_, dataset:dict, *, exclude_missing = False, missing_value = None) -> Any:
         return class_.validate(dataset).map(exclude_missing=exclude_missing, missing_value=missing_value)
 
-
-    # def __new__(class_, *, model:type = None) -> ValidationContext:
-    #     if class_ != Outpost:
-    #         raise AbstractError(f'{class_.__name__} is for static usage only')
-
-    #     validator = OutpostMeta.choose_validator(model)
-    #     return ValidationContext(model, OutpostMeta.generate_model_proxy(model, validator.get_fieldlist()), validator, NoRequirements(), {}, {})
-
-
-    # def __str__(self) -> str:
-    #     return f''' {"Outpost Validator Class":-^55} \n'''\
-    #     f''' {self.__class__.__qualname__:-^55} \n'''\
-    #     f'''\tmapping model: {self.model}\n'''\
-    #     f'''\trequirement rule: {self.requirement_rule.text_rule()}\n'''\
-    #     f'''\tread only fields:\n''' + \
-    #     '\n'.join(f'\t\t{field}: Raise = {to_raise}' for field, to_raise in self.readonly_fields.items()) + \
-    #     f'''\n\tvalidation methods:\n''' + \
-    #     '\n'.join(f'\t\t{field}: method = {method.__qualname__}' for field, method in self.supervalidators.items()) + \
-    #     f'\n{"END":-^56}'
-        
-    # ...
+    def __call__(self, *_: Any, **__: Any) -> Any:
+        raise AbstractError(f'{self.__class__.__name__} is for static usage only')

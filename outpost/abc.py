@@ -26,7 +26,6 @@ class Combinator:
 
 @dataclass
 class Validator:
-    field: ModelField
     method: Callable[[Any], Any] = None
     validator: 'ABCOutpost' = None
     check_result_type: bool = True
@@ -48,7 +47,7 @@ class ValidationFields:
     __original_model__: Any = None
     __readonly__: List[ModelField] = None
     __defaults__: Dict[ModelField, Any] = None
-    __validators__: List['Validator'] = None
+    __validators__: Dict[ModelField, 'Validator'] = None
     __combinators__: List['Combinator'] = None
     __requirements__: Rule = None
 
@@ -96,7 +95,7 @@ class ValidationProps:
         return self.__combinators__
 
     @property
-    def validators(self) -> List['Validator']:
+    def validators(self) -> Dict[ModelField, 'Validator']:
         return self.__validators__
 
 
@@ -131,8 +130,8 @@ class ValidationConfig(ValidationProps, ValidationFields):
         return tuple(super().combinators)
     
     @property
-    def validators(self) -> Tuple['Validator']:
-        return tuple(super().validators)
+    def validators(self) -> Dict[ModelField, 'Validator']:
+        return {**super().validators}
 
     @classmethod
     def from_child(class_, child:'ValidationConfig') -> 'ValidationConfig':
@@ -156,7 +155,7 @@ class ValidationConfig(ValidationProps, ValidationFields):
         result.__original_model__ = parent.model
         result.__readonly__ = [*parent.readonly, *child.readonly]
         result.__defaults__ = {**parent.defaults, **child.defaults}
-        result.__validators__ = [*parent.validators, *child.validators]
+        result.__validators__ = {**parent.validators, **child.validators}
         result.__combinators__ = [*parent.combinators, *child.combinators]
 
         all_rules = list()
@@ -273,5 +272,5 @@ class ABCOutpost(metaclass=OutpostMeta):
         return class_.__config__.combinators
 
     @classproperty
-    def validators(class_) -> Tuple['Validator']:
+    def validators(class_) -> Dict[ModelField, 'Validator']:
         return class_.__config__.validators

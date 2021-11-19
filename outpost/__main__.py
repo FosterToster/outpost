@@ -1,6 +1,6 @@
 from outpost.exceptions import ValidationError
 from .types import Outpost, OutpostProvider
-from typing import Optional
+from typing import Iterable
 from dataclasses import dataclass
 
 
@@ -13,8 +13,8 @@ class Phone:
 class User:
     id: int
     name: str
-    hash: Optional[int]
-    phone: Phone
+    hash: str
+    phone: Iterable[Phone]
 
 class PhoneValidator(Outpost):
     config = OutpostProvider.from_model(Phone)
@@ -37,6 +37,12 @@ class PhoneValidator(Outpost):
 
         return int(st)
 
+class CreatePhoneValidator(PhoneValidator):
+    config = PhoneValidator.config
+
+    @config.validator(config.fields.number)
+    def number(value):
+        raise ValidationError('Потом создашь')
 
 class UserValidator(Outpost):
     config = OutpostProvider.from_model(User)
@@ -53,6 +59,7 @@ class UpdateUserValidator(UserValidator):
 
 class CreateUserValidator(UserValidator):
     config = UserValidator.config
+    config.validator(config.fields.phone, CreatePhoneValidator)
 
     config.require(
         config.fields.name &
@@ -71,10 +78,11 @@ print(CreateUserValidator.requirements.text_rule())
 create_dataset = {
     'id': 1,
     'name': 'Sadric',
-    'hash': None,
-    'phone': {
+    'phone': [{
         'number': "+79639499629"
-    }
+    },{
+        'number': 89639499629
+    }]
 }
 
 update_dataset = {
