@@ -18,7 +18,8 @@ class User:
 
 class PhoneValidator(Outpost):
     config = OutpostProvider.from_model(Phone)
-    config.require(config.fields.number)
+    config.requirements = config.fields.number
+    # config.require(config.fields.number)
 
     @config.validator(config.fields.number)
     def number(value):
@@ -39,7 +40,7 @@ class PhoneValidator(Outpost):
 
 class CreatePhoneValidator(PhoneValidator):
     config = PhoneValidator.config
-
+    
     @config.validator(config.fields.number)
     def number(value):
         raise ValidationError('Потом создашь')
@@ -47,16 +48,20 @@ class CreatePhoneValidator(PhoneValidator):
 class UserValidator(Outpost):
     config = OutpostProvider.from_model(User)
     config.validator(config.fields.phone, PhoneValidator)
+    config.missing_value = None
 
 class UpdateUserValidator(UserValidator):
     config = UserValidator.config
-
+    config.raise_readonly = True
     config.require(config.fields.id & (
         config.fields.hash |
         config.fields.name |
         config.fields.phone
     ))
 
+class SomeUserValidator(UpdateUserValidator):
+    config = UpdateUserValidator.config
+    
 class CreateUserValidator(UserValidator):
     config = UserValidator.config
     config.validator(config.fields.phone, CreatePhoneValidator)
@@ -73,13 +78,15 @@ class CreateUserValidator(UserValidator):
     
     ...
 
-print(CreateUserValidator.requirements.text_rule())
+print(UserValidator.raise_readonly)
+print(UpdateUserValidator.raise_readonly)
+print(SomeUserValidator.raise_readonly)
 
 create_dataset = {
     'id': 1,
     'name': 'Sadric',
     'phone': [{
-        'number': "+79639499629"
+        
     },{
         'number': 89639499629
     }]
@@ -88,6 +95,9 @@ create_dataset = {
 update_dataset = {
     'id': 1,
     'name': 'Vigor',
+    'phone': [
+        {'number': '+79639499629'}
+    ]
 
 }
 
@@ -97,7 +107,6 @@ except ValidationError as e:
     a = e
 
 print('create:', a)
-
 
 try:
     a = UpdateUserValidator.create_model(update_dataset)

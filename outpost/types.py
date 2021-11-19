@@ -1,4 +1,3 @@
-from types import prepare_class
 from typing import Callable, Dict, Iterable, List
 from dataclasses import MISSING, fields
 from typing import Any, Union
@@ -9,7 +8,7 @@ from .rules import AND, Rule, Require, NoRequirements
 from .utils import ModelField
 
 
-from .abc import GenericValidatorProvider, TOriginalModel, ABCOutpost, ValidationConfig, Validator, Combinator
+from .abc import GenericValidatorProvider, TOriginalModel, ABCOutpost, ROConfiguration, RWConfiguration, Validator, Combinator, _EXCLUDE_MISSING
 
 from .exceptions import AbstractError, FieldRequirementException, NativeValidationError, UnexpectedError, ValidationError, ExcludeValue
 
@@ -23,9 +22,9 @@ class OutpostProvider(GenericValidatorProvider):
             new_rule = Require(expression)
 
         if isinstance(self.requirements, NoRequirements):
-            self.__requirements__ = new_rule
+            self.requirements = new_rule
         elif not isinstance(self.requirements, AND):
-            self.__requirements__ = AND(self.requirements, new_rule)
+            self.requirements = AND(self.requirements, new_rule)
         else:
             self.requirements.append_rules(new_rule)
 
@@ -59,19 +58,25 @@ class OutpostProvider(GenericValidatorProvider):
         # return type(f"{model.__name__}FieldsProxy", (Enum,), members)
         return type(f"{model.__name__}", (ModelField,), members)
 
-    def __init__(self, model: TOriginalModel):
-        super().__init__(model)
-        self.clear()
+    # def __init__(self, model: TOriginalModel):
+    #     super().__init__(model)
+    #     self.clear()
 
     def clear(self):
-        self.__readonly__ = list()
-        self.__defaults__ = dict()
-        self.__validators__ = dict()
-        self.__combinators__ = list()
-        self.__requirements__ = NoRequirements()
+        self.missing_value = _EXCLUDE_MISSING
+        self.raise_readonly = False
+        self.raise_unnecessary = False
+        self.readonly = list()
+        self.defaults = dict()
+        self.validators = dict()
+        self.combinators = dict()
+        self.requirements = NoRequirements()
 
     def __str__(self):
         return f'<{self.__class__.__qualname__} object>\n'+\
+            f'\traise unnecessary: {self.raise_unnecessary}\n'+\
+            f'\traise readonly: {self.raise_readonly}\n'+\
+            f'\tmissing value: {self.missing_value}\n'+\
             f'\treadonly: {[f"{x}" for x in self.readonly]}\n'+\
             f'\tdefaults: {[f"{x[0]}: {x[1]}" for x in self.defaults.items()]}\n'+\
             f'\tvalidators: {[f"{x}" for x in self.validators]}\n'+\
@@ -83,15 +88,14 @@ class OutpostProvider(GenericValidatorProvider):
         return class_(model)
 
 
-class _EXCLUDE_MISSING:
-        ...
+
 
 class ValidationContext:
     
 
-    def __init__(self, config: ValidationConfig, parent_validator_name:str = "") -> None:
+    def __init__(self, config: RWConfiguration, parent_validator_name:str = "") -> None:
         self.parent_validator_name = parent_validator_name
-        self.config: ValidationConfig = config
+        self.config: RWConfiguration = config
         self.fields_annotations = dict((field, self.get_annotation(field)) for field in self.config.fields)
         self.dataset = dict()
 
@@ -181,7 +185,7 @@ class ValidationContext:
         try:
             self.config.requirements.resolve([x for x in self.dataset.keys()])
         except FieldRequirementException:
-            raise ValidationError(f'Given dataset does not meet the requirements: {self.config.requirements.text_rule()}')
+            raise ValidationError(f'Given dataset does not satisfying the requirements: {self.config.requirements.text_rule()}')
         return self
 
     def validate_type(self, value:Any, annotation:type):
@@ -372,7 +376,7 @@ class Outpost(ABCOutpost):
     ...
     @classmethod
     def context(class_) -> ValidationContext:
-        return ValidationContext(class_.__config__, class_.__name__)
+        return ValidationContext(class_.__config__.to_RW(), class_.__name__)
 
     @classmethod
     def validate(class_, dataset: dict) -> ValidationContext:
