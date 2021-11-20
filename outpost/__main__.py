@@ -1,4 +1,4 @@
-from outpost.exceptions import ValidationError
+from .exceptions import ValidationError
 from .types import Outpost, OutpostProvider
 from typing import Iterable, Optional
 from dataclasses import dataclass
@@ -14,7 +14,7 @@ class User:
     id: int
     name: str
     hash: Optional[str]
-    phone: Iterable[Phone]
+    phone: Optional[Phone]
 
 class PhoneValidator(Outpost):
     config = OutpostProvider.from_model(Phone)
@@ -77,7 +77,6 @@ class CreateUserValidator(UserValidator):
     
     ...
 
-
 create_dataset = {
     'id': 1,
     'hash': None,
@@ -98,16 +97,23 @@ update_dataset = {
 }
 
 try:
-    print(CreateUserValidator.validation_results(create_dataset))
-    a = CreateUserValidator.create_model(create_dataset)
+    a = UserValidator.create_model(create_dataset)
 except ValidationError as e:
     a = e
 
 print('create:', a)
 
-try:
-    a = UpdateUserValidator.create_model(update_dataset)
-except ValidationError as e:
-    a = e
+# try:
+#     print(CreateUserValidator.validation_results(create_dataset))
+#     a = CreateUserValidator.create_model(create_dataset)
+# except ValidationError as e:
+#     a = e
 
-print('update:', a)
+# print('create:', a)
+
+# try:
+#     a = UpdateUserValidator.create_model(update_dataset)
+# except ValidationError as e:
+#     a = e
+
+# print('update:', a)

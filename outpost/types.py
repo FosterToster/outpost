@@ -1,16 +1,16 @@
-from typing import Callable, Dict, Iterable, List
-from dataclasses import MISSING, fields
+from typing import Iterable
+from dataclasses import fields
 from typing import Any, Union
 
-from outpost.type_validators import TypingModuleValidator
+from .type_validators import TypingModuleValidator
 
 from .rules import AND, Rule, Require, NoRequirements
 from .utils import ModelField
 
 
-from .abc import GenericValidatorProvider, TOriginalModel, ABCOutpost, ROConfiguration, RWConfiguration, Validator, Combinator, _EXCLUDE_MISSING
+from .abc import GenericValidatorProvider, TOriginalModel, ABCOutpost, RWConfiguration, Validator, Combinator, _EXCLUDE_MISSING
 
-from .exceptions import AbstractError, FieldRequirementException, NativeValidationError, UnexpectedError, ValidationError, ExcludeValue
+from .exceptions import AbstractError, FieldRequirementException, NativeValidationError, UnexpectedError, ValidationError, NotNoneError
 
 
 class OutpostProvider(GenericValidatorProvider):
@@ -222,17 +222,21 @@ class ValidationContext:
         tp = TypingModuleValidator()
         errors = list()
         native_error = None
+        notnone_error = None
         if self.any_union(annotation):
             args = annotation.__args__
             for arg in args:
                 try:
-                    if arg is type(None):
+                    if arg is type(None) or arg is None:
                         if value is None:
                             return None
                         else:
-                            raise NativeValidationError('Value is not None')
+                            raise NotNoneError('Value is not None')
                     else:
                         return self.resolve_annotations(field, arg, value, validator)
+                except NotNoneError as e:
+                    notnone_error = e
+                    continue
                 except NativeValidationError as e:
                     native_error = e
                     continue
@@ -243,7 +247,7 @@ class ValidationContext:
                 if len(errors) > 0:
                     raise ValidationError(f'{", ".join(f"{self.getname(arg)}({err})" for arg,err in errors)}')
                 else:
-                    raise native_error
+                    raise native_error or notnone_error
 
         elif self.any_iterable(annotation):
             if (not isinstance(value, Iterable)) or (isinstance(value, dict)) or (isinstance(value, str)):

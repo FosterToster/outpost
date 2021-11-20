@@ -13,5 +13,5 @@ class ValidationError(Exception):
 class NativeValidationError(Exception):
     ...
 
-class ExcludeValue(Exception):
+class NotNoneError(NativeValidationError):
     ...

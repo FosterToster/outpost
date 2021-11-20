@@ -4,8 +4,6 @@ from dataclasses import MISSING, fields
 
 from .utils import ModelField
 
-from .exceptions import ExcludeValue
-
 class ABCTypeValidator(ABC):
     def __init__(self, model) -> None:
         self._model = model
