@@ -10,7 +10,7 @@ class FieldRequirementException(Exception):
 class ValidationError(Exception):
     ...
 
-class NativeValidationError(Exception):
+class NativeValidationError(ValidationError):
     ...
 
 class NotNoneError(NativeValidationError):

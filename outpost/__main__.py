@@ -97,7 +97,7 @@ update_dataset = {
 }
 
 try:
-    a = UserValidator.create_model(create_dataset)
+    a = UserValidator.create_model({})
 except ValidationError as e:
     a = e
 

@@ -97,7 +97,24 @@ class ValidationContext:
         self.parent_validator_name = parent_validator_name
         self.config: RWConfiguration = config
         self.fields_annotations = dict((field, self.get_annotation(field)) for field in self.config.fields)
-        self.dataset = dict()
+        self.__dataset__ = None
+
+    @property
+    def dataset(self):
+        if self.__dataset__ is None:
+            raise NativeValidationError(f'validation dataset is empty')
+        elif len(self.__dataset__) == 0:
+            raise ValidationError(f'No one field has passed or all fields been filtered')
+        else:
+            return self.__dataset__
+    
+    @dataset.setter
+    def dataset(self, value):
+        if not isinstance(value, dict):
+            raise NativeValidationError('Invalid typecast. Object required.')
+        else:
+            self.__dataset__ = value
+
 
     def __enter__(self):
         return self
@@ -133,9 +150,11 @@ class ValidationContext:
     def export_dataset(self) -> dict:
         return self._deep_execute_on_dataset(method=lambda x: x.export_dataset(), replace_field=True)
 
-    def enumerize_dataset(self, dataset: dict = None,*, raise_unnecessary = False):
-        if dataset is not None:
-            self.dataset = {**dataset}
+    def enumerize_dataset(self, dataset: dict):
+        if not isinstance(dataset, dict):
+            raise NativeValidationError('Invalid typecast. Object required.')
+        
+        self.dataset = {**dataset}
 
         result = dict()
         
@@ -148,7 +167,7 @@ class ValidationContext:
             elif field in self.dataset:
                 result[field] = self.dataset.pop(field)
 
-        if (len(self.dataset) > 0) and raise_unnecessary:
+        if self.config.raise_unnecessary and (len(self.dataset) > 0):
             raise ValidationError(f'Unnecessary fields has been passed: {[str(x) for x in self.dataset.keys()]}') 
 
         self.dataset = result
@@ -261,6 +280,9 @@ class ValidationContext:
                         try:
                             result.append(self.resolve_annotations(field, arg, subvalue, validator))
                             break
+                        except NotNoneError as e:
+                            notnone_error = e
+                            continue
                         except NativeValidationError as e:
                             native_error = e
                             continue
@@ -271,7 +293,7 @@ class ValidationContext:
                         if len(errors) > 0:
                             raise ValidationError(f'[{i}]: {", ".join(f"({err})" for _, err in errors)}')
                         else:
-                            raise native_error
+                            raise native_error or notnone_error
                 
                 if str(annotation).startswith('typing.Tuple'):
                     return tuple(result)

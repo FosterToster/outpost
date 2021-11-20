@@ -2,10 +2,10 @@ from typing import Tuple, TypeVar, Union, List, Dict, Any, Iterable, Callable
 from typing import Generic
 from dataclasses import dataclass
 
-from .rules import AND, _RequireMany, NoRequirements, Require, Rule
+from .rules import AND, NoRequirements, Require, Rule
 from .utils import ModelField
 from .classproperty import classproperty
-from .exceptions import AbstractError, NativeValidationError, ValidationError
+from .exceptions import AbstractError
 
 
 @dataclass
@@ -34,10 +34,7 @@ class Validator:
         if self.method:
             return self.method(value)
         else:
-            if isinstance(value, dict):
-                return self.validator.validate(value)
-            else:
-                raise NativeValidationError('Invalid typecast. Object required.')
+            return self.validator.validate(value)
 
 
 TOriginalModel = TypeVar('TOriginalModel')
