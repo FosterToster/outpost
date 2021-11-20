@@ -2,6 +2,7 @@ from .exceptions import ValidationError
 from .types import Outpost, OutpostProvider
 from typing import Iterable, Optional
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass
@@ -12,9 +13,9 @@ class Phone:
 @dataclass
 class User:
     id: int
-    name: str
+    name: Optional[str]
     hash: Optional[str]
-    phone: Optional[Phone]
+    phone: Phone
 
 class PhoneValidator(Outpost):
     config = OutpostProvider.from_model(Phone)
@@ -62,7 +63,6 @@ class SomeUserValidator(UpdateUserValidator):
     
 class CreateUserValidator(UserValidator):
     config = UserValidator.config
-    config.missing_value = 3
     config.validator(config.fields.phone, CreatePhoneValidator)
 
     config.require(
@@ -79,12 +79,10 @@ class CreateUserValidator(UserValidator):
 
 create_dataset = {
     'id': 1,
-    'hash': None,
-    'name': 'Sadric',
-
-    'phone': [{
-        'number': 89639499629
-    }]
+    'name': None,
+    'phone': {
+        "number": "+79639499629"
+    }
 }
 
 update_dataset = {
@@ -97,10 +95,12 @@ update_dataset = {
 }
 
 try:
-    a = UserValidator.create_model({})
+    start = datetime.now()
+    a = CreateUserValidator.create_model(create_dataset)
 except ValidationError as e:
     a = e
 
+print(datetime.now() - start)
 print('create:', a)
 
 # try:

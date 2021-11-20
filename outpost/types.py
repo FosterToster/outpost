@@ -102,9 +102,9 @@ class ValidationContext:
     @property
     def dataset(self):
         if self.__dataset__ is None:
-            raise NativeValidationError(f'validation dataset is empty')
-        elif len(self.__dataset__) == 0:
-            raise ValidationError(f'No one field has passed or all fields been filtered')
+            raise NativeValidationError(f'value required')
+        # elif len(self.__dataset__) == 0:
+        #     raise ValidationError(f'No one field has passed or all fields been filtered')
         else:
             return self.__dataset__
     
@@ -316,7 +316,7 @@ class ValidationContext:
             else:
                 try:
                     if value is None:
-                        raise NativeValidationError('value is None')
+                        raise NativeValidationError('value required')
                     elif (annotation is bool) and isinstance(value, str):
                         if value.strip().lower() == 'true':
                             return True
