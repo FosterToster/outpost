@@ -183,7 +183,7 @@ class ValidationContext:
             if field in self.dataset:
                 if field in self.config.readonly:
                     if raise_readonly:
-                        raise ValidationError(f'Read-Only field has been passed: {field.value}')
+                        raise ValidationError(f'Given dataset contains read-only field: {field.value}')
                     else:
                         continue
                 else:
