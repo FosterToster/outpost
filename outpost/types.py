@@ -103,8 +103,6 @@ class ValidationContext:
     def dataset(self):
         if self.__dataset__ is None:
             raise NativeValidationError(f'value required')
-        # elif len(self.__dataset__) == 0:
-        #     raise ValidationError(f'No one field has passed or all fields been filtered')
         else:
             return self.__dataset__
     
