@@ -1,4 +1,4 @@
-from typing import Iterable
+from typing import Dict, Iterable
 from dataclasses import fields
 from typing import Any, Union
 
@@ -366,6 +366,12 @@ class Outpost(ABCOutpost):
     @classmethod
     def context(class_) -> ValidationContext:
         return ValidationContext(class_.__config__.to_RW(), class_.__name__)
+
+    @classmethod
+    def defaults(class_, values: Dict[ModelField, Any]) -> ValidationContext:
+        ctx = class_.context()
+        ctx.config.defaults.update(values)
+        return ctx
 
     @classmethod
     def validate(class_, dataset: dict) -> ValidationContext:
