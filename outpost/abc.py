@@ -262,16 +262,20 @@ class ROConfiguration(ConfigurationFieldset):
 class GenericValidatorProvider(RWConfiguration, Generic[TOriginalModel]):
     __fields: TOriginalModel
     __original_model: TOriginalModel
+    __field_generator__: 'IFieldGenerator'
+    __annotation_generator__: 'IAnnotationGenerator'
 
     @property
     def fields(self) -> TOriginalModel:
         return super().fields
 
-    def __init__(self, model:TOriginalModel):
-        super().__init__(self.__generate_model_proxy__(model), model)
+    def __init__(self, model:TOriginalModel, field_generator: 'IFieldGenerator', annotation_generator: 'IAnnotationGenerator'):
+        self.__field_generator__ = field_generator(model)
+        self.__annotation_generator__ = annotation_generator(model)
+        super().__init__(self.__generate_model_proxy__(self.__field_generator__), model)
 
     @staticmethod
-    def __generate_model_proxy__(model:TOriginalModel):
+    def __generate_model_proxy__(field_generator: 'IFieldGenerator'):
         ...
 
     def require(self, expression:Union[Rule, ModelField]):
@@ -385,3 +389,21 @@ class ABCOutpost(metaclass=OutpostMeta):
     @classproperty
     def validators(class_) -> Dict[ModelField, 'Validator']:
         return class_.__config__.validators
+
+
+class IAnnotationGenerator:
+    def __init__(self, model:TOriginalModel) -> None:
+        self.model = model
+        pass
+
+    def get_annotation(self, field: ModelField) -> type:
+        pass
+
+
+class IFieldGenerator:
+    def __init__(self, model:TOriginalModel) -> None:
+        self.model = model
+        pass
+
+    def all_fields(self) -> Iterable[str]:
+        pass
