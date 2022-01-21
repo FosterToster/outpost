@@ -1,3 +1,4 @@
+from uuid import uuid4
 from .exceptions import ValidationError
 from .types import Outpost, OutpostProvider
 from typing import Iterable, Optional
@@ -79,7 +80,7 @@ class CreateUserValidator(UserValidator):
 
 create_dataset = {
     'id': 1,
-    'name': None,
+    'name': "Иван",
     'phone': {
         "number": "+79639499629"
     }
@@ -96,7 +97,7 @@ update_dataset = {
 
 try:
     start = datetime.now()
-    a = CreateUserValidator.create_model(create_dataset)
+    a = CreateUserValidator.defaults({CreateUserValidator.fields.hash: str(uuid4()) }).validate(create_dataset).map()
 except ValidationError as e:
     a = e
 
