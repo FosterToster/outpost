@@ -11,29 +11,46 @@ from models import Phone, User
 
 class PhoneValidator(Outpost):
     op = OutpostProvider.from_model(Phone)
+    op.validator(op.fields.user_id, Outpost.promised('UserValidator'))
     
 
+class UserValidator(Outpost):
+    op = OutpostProvider.from_model(User)
+    op.validator(op.fields.phones, PhoneValidator)
+    
+        
+
 dataset = {
-    'id': "raiders",
+    'id': "1",
     'deleted': 'False',
     'user_id': 1,
     'number': '9634343434'
 }
 
+user_dataset = {
+    'id': "asd",
+    'name': 'Иванидзе',
+    'hash': 51235345,
+    'gender': 'MALE',
+}
+
 def pretty_print_model(instance):
     print(f'{instance.__class__.__name__}(')
     for field in AlchemyFieldGenerator(instance.__class__).all_fields():
-        print(f'\t{field}={getattr(instance, field)}')
+        f = getattr(instance, field)
+        print(f'\t{field}={f} ({type(f)})')
 
     print(')')
 
 
 try:
-    a = PhoneValidator.create_model(dataset)
+    # a = PhoneValidator.create_model(dataset)
+    b = UserValidator.create_model(user_dataset)
 except ValidationError as e:
-    print(f'({a.__class__.__name__}) {a}')
+    print(f'({e.__class__.__name__}) {e}')
 else:
-    pretty_print_model(a)
+    # pretty_print_model(a)
+    pretty_print_model(b)
 
 
 
