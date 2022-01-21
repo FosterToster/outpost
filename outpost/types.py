@@ -27,6 +27,7 @@ class DataclassAnnotationGenerator(IAnnotationGenerator):
                 return model_field.type or Any
         else:
             return Any
+            
 
 class OutpostProvider(GenericValidatorProvider):
     
@@ -393,6 +394,12 @@ class ValidationContext:
 
 class Outpost(ABCOutpost):
     ...
+
+    @classmethod
+    def promised(class_, validator_name:str) -> 'Outpost':
+        ...
+
+
     @classmethod
     def context(class_) -> ValidationContext:
         return ValidationContext(class_.__config__.to_RW(), class_.__name__)
