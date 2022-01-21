@@ -67,6 +67,8 @@ class ConfigurationFieldset:
     __validators: Dict[ModelField, 'Validator'] = None
     __combinators: List['Combinator'] = None
     __requirements: Rule = None
+    __field_generator__: 'IFieldGenerator'
+    __annotation_generator__: 'IAnnotationGenerator'
 
     @property
     def fields(self) -> ModelField:
@@ -160,6 +162,8 @@ class ConfigurationFieldset:
         self.__defaults = {**self.__defaults, **child.defaults}
         self.__validators = {**self.__validators, **child.validators}
         self.__combinators = [*self.combinators, *child.combinators]
+        self.__field_generator__ = child.__field_generator__
+        self.__annotation_generator__ = child.__annotation_generator__
 
         all_rules = list()
 
@@ -262,8 +266,6 @@ class ROConfiguration(ConfigurationFieldset):
 class GenericValidatorProvider(RWConfiguration, Generic[TOriginalModel]):
     __fields: TOriginalModel
     __original_model: TOriginalModel
-    __field_generator__: 'IFieldGenerator'
-    __annotation_generator__: 'IAnnotationGenerator'
 
     @property
     def fields(self) -> TOriginalModel:
