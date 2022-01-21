@@ -105,7 +105,17 @@ class OutpostProvider(GenericValidatorProvider):
         if is_dataclass(model):
             return class_(model, DataclassFieldGenerator, DataclassAnnotationGenerator)
         else:
-            raise TypeError(f'Model class is not supported.')
+            try:
+                import sqlalchemy
+            except ImportError:
+                raise TypeError(f'Type of {type(model)} is not supported. Make shure you using a dataclasses or sqlalchemy models.')
+            else:
+                if type(model) == sqlalchemy.orm.decl_api.DeclarativeMeta:    
+                    from .alchemy import AlchemyAnnotationGenerator, AlchemyFieldGenerator
+                    return class_(model, AlchemyFieldGenerator, AlchemyAnnotationGenerator)
+                else:
+                    raise TypeError(f'Type of {type(model)} is not supported. Make shure you using a dataclasses or sqlalchemy models.')
+                
 
 
 
@@ -116,7 +126,7 @@ class ValidationContext:
     def __init__(self, config: RWConfiguration, parent_validator_name:str = "") -> None:
         self.parent_validator_name = parent_validator_name
         self.config: RWConfiguration = config
-        self.fields_annotations = dict((field, self.get_annotation(field)) for field in self.config.fields)
+        self.fields_annotations = dict((field, self.config.__annotation_generator__.get_annotation(field)) for field in self.config.fields)
         self.__dataset__ = None
 
     @property
