@@ -1,6 +1,6 @@
-from typing import Dict, Iterable
-from dataclasses import fields
-from typing import Any, Union
+from typing import Iterable
+from dataclasses import fields, is_dataclass
+from typing import Any, Union, Dict
 
 from .type_validators import TypingModuleValidator
 
@@ -8,10 +8,25 @@ from .rules import AND, Rule, Require, NoRequirements
 from .utils import ModelField
 
 
-from .abc import GenericValidatorProvider, TOriginalModel, ABCOutpost, RWConfiguration, Validator, Combinator, _EXCLUDE_MISSING
+from .abc import GenericValidatorProvider, TOriginalModel, ABCOutpost, RWConfiguration, Validator, Combinator, _EXCLUDE_MISSING, IFieldGenerator, IAnnotationGenerator
 
 from .exceptions import AbstractError, FieldRequirementException, NativeValidationError, UnexpectedError, ValidationError, NotNoneError
 
+
+class DataclassFieldGenerator(IFieldGenerator):
+    
+    def all_fields(self) -> Iterable[str]:
+        return tuple(x.name for x in fields(self.model))
+
+
+class DataclassAnnotationGenerator(IAnnotationGenerator):
+    
+    def get_annotation(self, field: ModelField) -> type:
+        for model_field in fields(self.model):
+            if model_field.name == field.name:
+                return model_field.type or Any
+        else:
+            return Any
 
 class OutpostProvider(GenericValidatorProvider):
     
@@ -46,17 +61,19 @@ class OutpostProvider(GenericValidatorProvider):
         return decorator
         
     @staticmethod
-    def __generate_model_proxy__(model: TOriginalModel):
+    def __generate_model_proxy__(field_generator: IFieldGenerator) -> ModelField:
         #idk why Enum metaclass dont likes common dicts. _member_names field is needed for it, and there is nothing i can do
         class MemberDict(dict):
             _member_names = ()
 
         members = MemberDict()
+        fieldnames = field_generator.all_fields()
+        members.update(dict(zip(fieldnames, fieldnames)))
  
-        members.update(dict((field_.name, field_.name) for field_ in fields(model)))
+        # members.update(dict((field_.name, field_.name) for field_ in fields(model)))
         members._member_names = [key for key in members.keys()]
         # return type(f"{model.__name__}FieldsProxy", (Enum,), members)
-        return type(f"{model.__name__}", (ModelField,), members)
+        return type(f"{field_generator.model.__name__}", (ModelField,), members)
 
     # def __init__(self, model: TOriginalModel):
     #     super().__init__(model)
@@ -85,7 +102,10 @@ class OutpostProvider(GenericValidatorProvider):
 
     @classmethod
     def from_model(class_, model:TOriginalModel) -> GenericValidatorProvider[TOriginalModel]:
-        return class_(model)
+        if is_dataclass(model):
+            return class_(model, DataclassFieldGenerator, DataclassAnnotationGenerator)
+        else:
+            raise TypeError(f'Model class is not supported.')
 
 
 
