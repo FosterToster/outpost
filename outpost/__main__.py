@@ -11,41 +11,47 @@ from models import Phone, User
 
 class PhoneValidator(Outpost):
     op = OutpostProvider.from_model(Phone)
-    op.validator(op.fields.user_id, Outpost.promised('UserValidator'))
+    op.validator(op.fields.user, Outpost['UserValidator']) # promised validator
     
 
 class UserValidator(Outpost):
     op = OutpostProvider.from_model(User)
     op.validator(op.fields.phones, PhoneValidator)
+    op.require(op.fields.id)
     
-        
+
+user_dataset = {
+    'id': "10",
+    'name': 'Иванидзе',
+    'hash': 51235345,
+    'gender': 'MALE',
+    # 'phones': [dataset]
+}
 
 dataset = {
     'id': "1",
     'deleted': 'False',
-    'user_id': 1,
-    'number': '9634343434'
+    'number': '9634343434',
+    'user': user_dataset
 }
 
-user_dataset = {
-    'id': "asd",
-    'name': 'Иванидзе',
-    'hash': 51235345,
-    'gender': 'MALE',
-}
-
-def pretty_print_model(instance):
+def pretty_print_model(instance, tabs=1):
     print(f'{instance.__class__.__name__}(')
     for field in AlchemyFieldGenerator(instance.__class__).all_fields():
         f = getattr(instance, field)
-        print(f'\t{field}={f} ({type(f)})')
 
-    print(')')
+        if isinstance(f, User) or isinstance(f, Phone):
+            print('\t'*tabs + f'{field}=', end="")
+            pretty_print_model(f, tabs + 1)
+        else:
+            print('\t'*tabs + f'{field}={f} ({type(f)})')
+
+    print(( '\t'*(tabs - 1) ) + ')')
 
 
 try:
-    # a = PhoneValidator.create_model(dataset)
-    b = UserValidator.create_model(user_dataset)
+    b = PhoneValidator.create_model(dataset)
+    # b = UserValidator.create_model(user_dataset)
 except ValidationError as e:
     print(f'({e.__class__.__name__}) {e}')
 else:
