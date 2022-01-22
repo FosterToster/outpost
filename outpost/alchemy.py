@@ -40,6 +40,11 @@ class AlchemyAnnotationGenerator(IAnnotationGenerator):
         self.fields_dict.update(
             dict((rel._dependency_processor.key, rel) for rel in self.mapper.relationships )
         )
+        self.__type_aliases__ = OrderedDict(**self.__type_aliases__)
+
+    @property
+    def type_aliases(self) -> OrderedDict:
+        return self.__type_aliases__
 
     @classmethod
     def append_typealias(class_, type_:type, typing_alias: type):
