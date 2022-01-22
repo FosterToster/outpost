@@ -4,6 +4,9 @@ class UnexpectedError(Exception):
 class AbstractError(Exception):
     ...
 
+class NoPromisedValidator(AbstractError):
+    ...
+
 class FieldRequirementException(Exception):
     ...
 
