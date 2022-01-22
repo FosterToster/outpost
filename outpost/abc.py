@@ -1,11 +1,11 @@
 from typing import Tuple, TypeVar, Union, List, Dict, Any, Iterable, Callable
-from typing import Generic
+from typing import Generic, Type
 from dataclasses import dataclass
 
 from .rules import AND, NoRequirements, Require, Rule
 from .utils import ModelField
 from .classproperty import classproperty
-from .exceptions import AbstractError
+from .exceptions import AbstractError, NoPromisedValidator
 
 
 @dataclass
@@ -295,6 +295,8 @@ class GenericValidatorProvider(RWConfiguration, Generic[TOriginalModel]):
 
 class OutpostMeta(type):
 
+    __validators__ = list()
+
     @staticmethod
     def inherit_configurations(superclasses:Iterable['ABCOutpost'], current: GenericValidatorProvider = None) -> RWConfiguration:
         result = RWConfiguration()
@@ -314,14 +316,24 @@ class OutpostMeta(type):
 
         return result
 
+    def __getitem__(class_, *args) -> '_PromisedValidator':
+        if len(args) != 1:
+            raise AbstractError(f'Usage: Outpost["ValidatorName"]')
+        validator_name = args[0]
+        if not isinstance(validator_name, str):
+            raise AbstractError(f'Object {validator_name} can`t be used as validator name.')
+
+        return _PromisedValidator(args[0])
+
     def __new__(class_, name_:str, superclasses_:list, dict_:dict):
         # just create abc classes
-        if name_ in ('ABCOutpost', 'Outpost'):
+        if name_ in ('ABCOutpost', 'Outpost', '_PromisedValidator'):
             return super().__new__(class_, name_, superclasses_, dict_)
 
-        # new_dict = dict()
-
-        
+        if name_ in class_.__validators__:
+            raise AbstractError(f'Name collision: validator named "{name_}" alredy defined.') 
+        else:
+            class_.__validators__.append(name_)
             
         result_class = super().__new__(class_, name_, superclasses_, dict_)
         
@@ -391,6 +403,40 @@ class ABCOutpost(metaclass=OutpostMeta):
     @classproperty
     def validators(class_) -> Dict[ModelField, 'Validator']:
         return class_.__config__.validators
+
+
+class _PromisedValidator(ABCOutpost):
+    def __init__(self, validator_name:str) -> None:
+        self.name = validator_name
+        self.__validator = None
+
+    @staticmethod
+    def __find_validator__(obj:Type[ABCOutpost], name:str):
+        for subclass in obj.__subclasses__():
+            if subclass.__name__ == name:
+                return subclass
+        else:
+            raise NoPromisedValidator(f'Promised validator "{name}" is not found')
+
+    @property
+    def assigned_validator(self):
+        if self.__validator is None:
+            for subclass in ABCOutpost.__subclasses__():
+                try:
+                    self.__validator = self.__find_validator__(subclass, self.name)
+                    break
+                except NoPromisedValidator:
+                    continue
+            else:
+                raise NoPromisedValidator(f'Promised validator "{self.name}" was never defined')
+
+        return self.__validator
+
+    def __getattr__(self, attr):
+        return getattr(self.assigned_validator, attr)
+
+
+
 
 
 class IAnnotationGenerator:
