@@ -84,8 +84,11 @@ class AlchemyAnnotationGenerator(IAnnotationGenerator):
         if isinstance(field, Column):
             return self.find_column_alias(field)
         elif isinstance(field, RelationshipProperty):
-            print(f'relation: {field}')
-            return Any
+            type_ = field.entity._identity_class
+            if field.uselist:
+                return Iterable[type_]
+            else:
+                return type_
         else:
             return Any
         return str
