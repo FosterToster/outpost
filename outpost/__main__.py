@@ -17,6 +17,7 @@ class User:
     hash: Optional[str]
     phone: Phone
 
+
 class PhoneValidator(Outpost):
     config = OutpostProvider.from_model(Phone)
     config.requirements = config.fields.number
@@ -52,6 +53,7 @@ class UserValidator(Outpost):
 class UpdateUserValidator(UserValidator):
     config = UserValidator.config
     config.raise_readonly = True
+    config.combine()
     config.require(config.fields.id & (
         config.fields.hash |
         config.fields.name |

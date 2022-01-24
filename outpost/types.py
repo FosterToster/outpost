@@ -3,6 +3,7 @@ from dataclasses import fields, is_dataclass
 from typing import Any, Union, Dict
 
 from .type_validators import TypingModuleValidator
+from .deprecation import deprecated
 
 from .rules import AND, Rule, Require, NoRequirements
 from .utils import ModelField
@@ -400,7 +401,14 @@ class Outpost(ABCOutpost):
         return ValidationContext(class_.__config__.to_RW(), class_.__name__)
 
     @classmethod
+    @deprecated('Use .update_defaults() instead.')
     def defaults(class_, values: Dict[ModelField, Any]) -> ValidationContext:
+        ctx = class_.context()
+        ctx.config.defaults.update(values)
+        return ctx
+
+    @classmethod
+    def update_defaults(class_, values: Dict[ModelField, Any]) -> ValidationContext:
         ctx = class_.context()
         ctx.config.defaults.update(values)
         return ctx
@@ -410,11 +418,21 @@ class Outpost(ABCOutpost):
         return class_.context().validate(dataset=dataset)
 
     @classmethod
-    def validation_results(class_, dataset: dict):
+    @deprecated('Use .validated_dataset() instead.')
+    def validation_results(class_, dataset: dict) -> dict:
         return class_.validate(dataset).validated_dataset()
 
     @classmethod
+    def validated_dataset(class_, dataset: dict) -> dict:
+        return class_.validate(dataset).validated_dataset()
+
+    @classmethod
+    @deprecated('Use .map() instead.')
     def create_model(class_, dataset:dict) -> Any:
+        return class_.validate(dataset).map()
+
+    @classmethod
+    def map(class_, dataset:dict) -> Any:
         return class_.validate(dataset).map()
 
     def __call__(self, *_: Any, **__: Any) -> Any:
