@@ -60,17 +60,17 @@ class SomeCreateValidator(SomeValidator):
 Поступайте так, если валидация данных необходима в одном единственном случае использования модели.
 
 ## Функционал описания правил валидации (OutpostProvider)
-Для описания правил валидации используется Generic класс OutpostProvider, который инифиализируется с помощью специального статического метода: `.from_model(model:Union[dataclass, DeclarativeBase])`\
+Для описания правил валидации используется Generic класс OutpostProvider, который инициализируется с помощью специального статического метода: `.from_model(model:Union[dataclass, DeclarativeBase])`\
 ### Провайдер полей модели
 Созданный на основе модели OutpostProvider содержит провайдер полей модели - `fields`, содержащий перечисляемый тип ModelField, описывающий все пригодные для валидации поля описанной модели\
-(Для датаклассов это поля, содержащие аннотацию типа, для sqlalchemy это колонки и relationship's)
+(Для датаклассов это поля, содержащие аннотацию типа, для sqlalchemy это колонки и relationship'ы)
 
 ```python
 # модель данных
 @dataclass
 class Some:
     name: str
-    value: Optional(int)
+    value: Optional[int]
     
 # параметры валидации на основе модели данных
 op = OutpostProvider.from_model(Some)
