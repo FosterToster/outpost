@@ -294,9 +294,9 @@ except ValidationError as e:
 Аннотация типов генерируется на основе типа Column, через заранее описанные алиасы, либо на основе аргумента relationship'а\
 Алиасы могут быть модифициорваны:
 - Глобально:\
-  `AlchemyAnnotationGenerator.appent_typealias(sqlalchemy.dialects.postgresql.json, dict)`
+  `AlchemyAnnotationGenerator.appent_typealias(sqlalchemy.dialects.postgresql.json.JSON, dict)`
 - Локально для контекста\
-  `Outpost.config.__annotation_generator__.__type_aliases__[sqlalchemy.dialects.postgresql.json] = dict`
+  `context.config.__annotation_generator__.__type_aliases__[sqlalchemy.dialects.postgresql.json.JSON] = dict`
 
 Алиасы будут дополняться по мере необходимости.
 
