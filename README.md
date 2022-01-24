@@ -300,3 +300,34 @@ except ValidationError as e:
 
 Алиасы будут дополняться по мере необходимости.
 
+При использовании sqlalchemy вероятна ситуация, когда необходимо указать валидатор для relationship'а, который еще не был создан в процессе выполнения сценария.\
+В этом случае необходимо воспользоваться функционалом обещанных валидаторов.\
+```python
+class User(DeclarativeBase):
+  __tablename__ = 'users'
+  
+  id = Column(Integer, primary_key=True)
+  name = Column(String, nullable=False)
+  # Не объявленная еще модель Phone указана как строка
+  phones = relationship('Phone', back_populates="user")
+  
+
+class Phone(DeclarativeBase):
+  __tablename__ = 'phones'
+  id = Column(Integer, primary_key=True)
+  user_id = Column(Integer, ForeignKey('users.id), nullable=False)
+  user = relationship(User, back_populates='phones')
+  
+class PhoneValidator(Outpost):
+  op = OutpostProvider.from_model(Phone)
+  # Необходимо определить для поля user валидатор UserValidator, однако он еще не объявлен.
+  # Используем обещанный валидатор, указав его имя через субскрипцию класса Outpost
+  op.validator(op.fields.user, Outpost["UserValidator"])
+  
+# Общали - объявляем
+class UserValidator(Oupost):
+  op = OutpostProvider.from_model(User)
+  # PhoneValidator уже объявлен, используем его
+  op.validator(op.phones, PhoneValidator)
+
+```
