@@ -19,7 +19,7 @@ Powerful python data validation module
 - Несколько режимов валидации:
   - Упрощенный: простой маппинг модели по входящему набору данных
   - Расширенный: ручное выполнение с помощью chain-методов c базовой локальной модификацией правил валидации
-  - Сложный: Контекстная валидация с возможностью полной локальной модификации правил валидации
+  - Продвинутый: Контекстная валидация с возможностью полной локальной модификации правил валидации
 
 ## Поддержка моделей данных
 - dataclasses
@@ -172,13 +172,131 @@ class User:
     
 # Определение валидатора для Phone с обязательным полем number
 class PhoneValidator(Outpost):
-    config = OutpostProvider.from_model(Phone)
-    config.requirements = config.fields.number
+    op = OutpostProvider.from_model(Phone)
+    op.requirements = op.fields.number
     
 # Определение валидатора для User
 class UserValidator(Outpost):
-    config = OutpostProvider.from_model(User)
+    op = OutpostProvider.from_model(User)
     
     # Указание валидатора PhoneValidator для поля phones
-    config.validator(config.fields.phones, PhoneValidator)
+    op.validator(op.fields.phones, PhoneValidator)
 ```
+
+### !Валидация комбинаций полей (WIP)
+Значения полей могут быть провалидированы совместно.\
+Создайте такое правило с помощью декоратора `op.combine`. В качестве аргументов передайте поля, которые необходимо провалидировать совместно.\
+Декорируемая функция должна принимать на вход количество аргументов, соответствующее количеству аргументов декоратора и поднимать ValidationError в случае ошибки.\
+Каждый из аргументов получит значение соответствующего поля, прошедшего валидацию и маппинг, где применимо.\
+**Комбинатор будет вызван только если во входящем наборе данных присутствуют (и валидны) значения для всех комбинируемых полей**
+```python
+
+@op.combine(op.fields.dish_list, op.fields.total_amount)
+def total_combinator(dish_list:Iterable[Dish], total_amount:int):
+  if sum([dish.price for dish in dish_list]) != total_amount:
+    raise ValidationError("Sum of dishes prices is not equals to passed total_amount")
+
+```
+
+## Режимы валидации
+Outpost поддерживает три режима валидации: От самого базового, до продвинутого.\
+Однако каждый из них позволяет получить готовый объект модели в случае усхепа, или обработать исключение ValidationError в случае ошибки валидации данных.
+
+### Упрощенный режим
+Самый простой способ воспользоваться валидатором - вызвать статический метод `.map` у готового наследника Outpost
+```python
+# Пример простейщего маппинга модели из входящего набора данных
+try:
+  user: User = UserValidator.map(request.json)
+except ValidationError as e:
+  print(e)
+```
+Так-же у Outpost есть несколько базовых статических методов для более гибкой валидации.\
+Например можно задать дополнительные значения по-умолчанию, или получить провалидированный набор данных без маппинга в модель.
+```python
+try:
+  # Добавление значения по-умолчанию для текущей валидации набора данных для модели User
+  user: User = UserValidator.update_defaults({UserValidator.fields.hash: str(uuid4())}).map(request.json)
+  
+  # Получение провалидированного набора даных без маппинга в модель
+  user: dict = UserValidator.validated_dataset(request.json)
+ 
+except ValidatonError as e:
+  print(e)
+```
+
+### Method-chain
+Любой из статических методов, вызванных у наследника Outpost приводит к созданию контекста валидации.\
+Контекст валидации - это объект, содержащий в себе параметры валидации, указанные в наследнике Outpost, и обладающий всем необходимым функционалом.\
+Процесс валидации происходит в несколько этапов:
+- `enumerize_dataset()`: Приведение полей входящего набора данных к ModelField
+  - Введение в набор данных значений по-умолчанию
+  - Проверка излишних полей для случая с `.raise_unnecessary = True`
+- `filter_readonly()`: Фильрация readonly полей
+  - Поднятие исключения для случая с `.raise_readonly = True`
+- `check_requirements()`: Проверка requirements
+- `validate()`: Валидация типов
+  - Вызов сложных методов валидации
+  - Вызов валидаторов для вложенных моделей
+
+Весть этот процесс валидации может быть выполнен вручную, с помощью вызова методов по цепочке.\
+Началом цепочки может быть любой из методов. При этом будут выполнены все предшествующие ему.\
+Результат выполнения каждого из методов может быть получен из контекста до завершения процесса валидации\
+с помощью методов `.current_dataset()` или `.export_dataset()`\
+`.current_dataset()` позволит получить доступ сырым данным валидации.\
+Результатом будет словарь, содержащий ModelField'ы в качестве ключей и сырые промежуточные значения.\
+`.export_dataset()` вернет классический словарь, похожий на исходный набор данных.
+```python
+try:
+  # Полная цепочка валидации
+  user: User = UserValidator.context().enumerize_dataset(request.json).filter_readonly().check_requirements().validate().map()
+  
+  # Без проверки requirements
+  user: User = UserValidator.context().filter_readonly(request.json).validate().map()
+  
+  # Валидация без маппинга
+  user: dict = UserValidator.context().validate(request.json).export_dataset()
+except ValidationError as e:
+  print(e)
+```
+
+### Продвинутый метод валидации
+ValidationContext может быть использован в контестном меннеджере.\
+Это позволит ситуативно модифицировать правила валидации для конкретного случая.\
+Правила валидации содержатся в поле `.config` конекста валидации.\
+**Важно помнить, что все изменения правил валидации, сделанные в контексте имеют силу только в рамках этого контекста.**\
+```python
+try:
+  # Создание контекста валидации
+  with CreateUserValidator.context() as context:
+    # запрет на передачу телефонов только в случае, если создающий - НЕ администратор
+    if not session.user.is_admin:
+      context.config.readonly.append(context.fields.phones)
+      context.config.raise_readonly = True
+      
+    user: User = context.map(request.json)
+except ValidationError as e:
+  print(e)
+```
+Все описанное в предыдущем разделе так-же актуально и для продвинутой валдации.
+
+
+## Поддержка других правил описания моделей
+Изначально Outpost был разработан для валидации dataclasses моделей с аннотациями типов из модуля typing.\
+В виду того, что внутренняя логика валидации получилась весьма нетривиальной, для поддержки других правил описания моделей данных было принято решение\
+использовать интерфейсы, позволяющие получить список и описание полей модели.\
+Главная задача интерфейса - составить typing алиас для поля оригинальной модели.\
+
+### Модели sqlalchemy - поддержка с версии v1.1
+Описаны AlchemyFieldGenerator и AlchemyAnnotationGenerator в субмодуле .alchemy.py\
+Автоматически передаются в OutpostProvider при создании через .from_model в случае, если модель создана на основе sqlalchemy.DeclarativeMeta.\
+Полями модели считаются все Column и все явно указанные relationship'ы\
+Аннотация типов генерируется на основе типа Column, через заранее описанные алиасы, либо на основе аргумента relationship'а\
+Алиасы могут быть модифициорваны:
+- Глобально:\
+  `AlchemyAnnotationGenerator.appent_typealias(sqlalchemy.dialects.postgresql.json, dict)`
+- Локально для контекста\
+  `Outpost.config.__annotation_generator__.__type_aliases__[sqlalchemy.dialects.postgresql.json] = dict`
+
+Алиасы будут дополняться по мере необходимости.
+
