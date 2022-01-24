@@ -1,7 +1,7 @@
 # -*- encoding=utf-8 -*-
 # This file was generated automatically
 
-__version__ = (1,1,0,0)
+__version__ = (1,1,1,0)
 
 from . import classproperty
 from . import exceptions
