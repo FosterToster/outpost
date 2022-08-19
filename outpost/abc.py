@@ -53,7 +53,7 @@ class ConfigurationFieldset:
         self.__readonly = list()
         self.__defaults = dict()
         self.__validators = dict()
-        self.__combinators = dict()
+        self.__combinators = list()
         self.__requirements = NoRequirements()
 
 

@@ -88,7 +88,7 @@ class OutpostProvider(GenericValidatorProvider):
         self.readonly = list()
         self.defaults = dict()
         self.validators = dict()
-        self.combinators = dict()
+        self.combinators = list()
         self.requirements = NoRequirements()
 
     def __str__(self):
@@ -380,16 +380,25 @@ class ValidationContext:
         self.dataset = result
         return self
 
+    def combine(self, dataset: dict = None):
+        if dataset is not None:
+            self.validate(dataset)
+
+        for combinator in self.config.combinators:
+            combinator.combine(self.dataset)
+        
+        return self
+
 
     def validated_dataset(self, dataset:dict = None):
         if dataset is not None:
-            self.validate(dataset)
+            self.combine(dataset)
 
         return self.export_dataset()
 
     def map(self, dataset:dict = None):
         if dataset is not None:
-            self.validate(dataset)
+            self.combine(dataset)
         return self.config.model(**self._deep_execute_on_dataset(method=lambda x: x.map(), replace_field=True))
  
 
@@ -415,7 +424,9 @@ class Outpost(ABCOutpost):
 
     @classmethod
     def validate(class_, dataset: dict) -> ValidationContext:
-        return class_.context().validate(dataset=dataset)
+        if dataset is None:
+            raise NativeValidationError('value required')
+        return class_.context().combine(dataset=dataset)
 
     @classmethod
     @deprecated('Use .validated_dataset() instead.')
