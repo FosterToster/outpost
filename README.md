@@ -60,17 +60,17 @@ class SomeCreateValidator(SomeValidator):
 Поступайте так, если валидация данных необходима в одном единственном случае использования модели.
 
 ## Функционал описания правил валидации (OutpostProvider)
-Для описания правил валидации используется Generic класс OutpostProvider, который инифиализируется с помощью специального статического метода: `.from_model(model:Union[dataclass, DeclarativeBase])`\
+Для описания правил валидации используется Generic класс OutpostProvider, который инициализируется с помощью специального статического метода: `.from_model(model:Union[dataclass, DeclarativeBase])`\
 ### Провайдер полей модели
 Созданный на основе модели OutpostProvider содержит провайдер полей модели - `fields`, содержащий перечисляемый тип ModelField, описывающий все пригодные для валидации поля описанной модели\
-(Для датаклассов это поля, содержащие аннотацию типа, для sqlalchemy это колонки и relationship's)
+(Для датаклассов это поля, содержащие аннотацию типа, для sqlalchemy это колонки и relationship'ы)
 
 ```python
 # модель данных
 @dataclass
 class Some:
     name: str
-    value: Optional(int)
+    value: Optional[int]
     
 # параметры валидации на основе модели данных
 op = OutpostProvider.from_model(Some)
@@ -294,9 +294,40 @@ except ValidationError as e:
 Аннотация типов генерируется на основе типа Column, через заранее описанные алиасы, либо на основе аргумента relationship'а\
 Алиасы могут быть модифициорваны:
 - Глобально:\
-  `AlchemyAnnotationGenerator.appent_typealias(sqlalchemy.dialects.postgresql.json, dict)`
+  `AlchemyAnnotationGenerator.appent_typealias(sqlalchemy.dialects.postgresql.json.JSON, dict)`
 - Локально для контекста\
-  `Outpost.config.__annotation_generator__.__type_aliases__[sqlalchemy.dialects.postgresql.json] = dict`
+  `context.config.__annotation_generator__.__type_aliases__[sqlalchemy.dialects.postgresql.json.JSON] = dict`
 
 Алиасы будут дополняться по мере необходимости.
 
+При использовании sqlalchemy вероятна ситуация, когда необходимо указать валидатор для relationship'а, который еще не был создан в процессе выполнения сценария.\
+В этом случае необходимо воспользоваться функционалом обещанных валидаторов.\
+```python
+class User(DeclarativeBase):
+  __tablename__ = 'users'
+  
+  id = Column(Integer, primary_key=True)
+  name = Column(String, nullable=False)
+  # Не объявленная еще модель Phone указана как строка
+  phones = relationship('Phone', back_populates="user")
+  
+
+class Phone(DeclarativeBase):
+  __tablename__ = 'phones'
+  id = Column(Integer, primary_key=True)
+  user_id = Column(Integer, ForeignKey('users.id), nullable=False)
+  user = relationship(User, back_populates='phones')
+  
+class PhoneValidator(Outpost):
+  op = OutpostProvider.from_model(Phone)
+  # Необходимо определить для поля user валидатор UserValidator, однако он еще не объявлен.
+  # Используем обещанный валидатор, указав его имя через субскрипцию класса Outpost
+  op.validator(op.fields.user, Outpost["UserValidator"])
+  
+# Общали - объявляем
+class UserValidator(Oupost):
+  op = OutpostProvider.from_model(User)
+  # PhoneValidator уже объявлен, используем его
+  op.validator(op.phones, PhoneValidator)
+
+```
