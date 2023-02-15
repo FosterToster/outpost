@@ -388,6 +388,12 @@ class ValidationContext:
             combinator.combine(self.dataset)
         
         return self
+    
+    def validation_entry(self, dataset: dict):
+        if dataset is not None:
+            self.combine(dataset)
+
+        return self
 
 
     def validated_dataset(self, dataset:dict = None):
