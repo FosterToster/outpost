@@ -197,6 +197,9 @@ class ValidationContext:
             elif field in self.dataset:
                 result[field] = self.dataset.pop(field)
 
+            if callable(result.get(field)):
+                result[field] = result[field]()
+
         if self.config.raise_unnecessary and (len(self.dataset) > 0):
             raise ValidationError(f'Given dataset contains unnecessary fields: {[str(x) for x in self.dataset.keys()]}') 
 
